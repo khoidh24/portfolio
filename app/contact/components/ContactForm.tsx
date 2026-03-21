@@ -10,6 +10,7 @@ import { useForm } from "react-hook-form";
 import { cn } from "@/lib/utils";
 import { zodResolver } from "@hookform/resolvers/zod";
 import gsap from "gsap";
+import { CheckCircle2, Loader2 } from "lucide-react";
 import { z } from "zod";
 
 import { schema } from "../services/formSchema";
@@ -17,14 +18,23 @@ import { schema } from "../services/formSchema";
 type FormData = z.infer<typeof schema>;
 
 const BTN_TEXT = "Send Message";
+const BTN_SENT = "Message Sent";
 
-function SubmitButton({ isSubmitting }: { isSubmitting: boolean }) {
+function SubmitButton({
+  isSubmitting,
+  isSent,
+}: {
+  isSubmitting: boolean;
+  isSent: boolean;
+}) {
   const btnRef = useRef<HTMLButtonElement>(null);
   const tlRef = useRef<gsap.core.Timeline | null>(null);
 
+  const label = isSent ? BTN_SENT : BTN_TEXT;
+
   useEffect(() => {
     const btn = btnRef.current;
-    if (!btn) return;
+    if (!btn || isSent) return;
 
     const topChars = btn.querySelectorAll<HTMLElement>(".btn-char-top");
     const botChars = btn.querySelectorAll<HTMLElement>(".btn-char-bot");
@@ -55,34 +65,60 @@ function SubmitButton({ isSubmitting }: { isSubmitting: boolean }) {
       btn.removeEventListener("mouseenter", onEnter);
       btn.removeEventListener("mouseleave", onLeave);
     };
-  }, []);
+  }, [isSent]);
 
   return (
     <button
       ref={btnRef}
       type="submit"
-      disabled={isSubmitting}
-      className="border-foreground/20 hover:bg-foreground hover:text-background inline-flex items-center gap-3 border px-8 py-4 font-sans text-sm font-semibold tracking-wide transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-40 md:px-10 md:py-5 md:text-base"
+      disabled={isSubmitting || isSent}
+      className={cn(
+        "inline-flex items-center gap-3 border px-8 py-4 font-sans text-sm font-semibold tracking-wide transition-all duration-300 md:px-10 md:py-5 md:text-base",
+        isSent
+          ? "border-foreground bg-foreground text-background cursor-default"
+          : "border-foreground/20 hover:bg-foreground hover:text-background disabled:cursor-not-allowed disabled:opacity-40",
+      )}
     >
-      <span className="relative flex overflow-hidden">
-        <span className="flex" aria-hidden>
-          {BTN_TEXT.split("").map((char, i) => (
-            <span key={`t-${i}`} className="btn-char-top inline-block">
-              {char === " " ? "\u00A0" : char}
+      {isSubmitting ? (
+        <>
+          <Loader2 size={16} className="animate-spin" />
+          <span className="font-sans text-sm font-semibold tracking-wide md:text-base">
+            Sending...
+          </span>
+        </>
+      ) : isSent ? (
+        <>
+          <CheckCircle2 size={16} />
+          <span className="relative flex overflow-hidden">
+            <span className="flex">
+              {label.split("").map((char, i) => (
+                <span key={`s-${i}`} className="inline-block">
+                  {char === " " ? "\u00A0" : char}
+                </span>
+              ))}
             </span>
-          ))}
+            <span className="sr-only">{label}</span>
+          </span>
+        </>
+      ) : (
+        <span className="relative flex overflow-hidden">
+          <span className="flex" aria-hidden>
+            {label.split("").map((char, i) => (
+              <span key={`t-${i}`} className="btn-char-top inline-block">
+                {char === " " ? "\u00A0" : char}
+              </span>
+            ))}
+          </span>
+          <span className="absolute inset-0 flex" aria-hidden>
+            {label.split("").map((char, i) => (
+              <span key={`b-${i}`} className="btn-char-bot inline-block">
+                {char === " " ? "\u00A0" : char}
+              </span>
+            ))}
+          </span>
+          <span className="sr-only">{label}</span>
         </span>
-        <span className="absolute inset-0 flex" aria-hidden>
-          {BTN_TEXT.split("").map((char, i) => (
-            <span key={`b-${i}`} className="btn-char-bot inline-block">
-              {char === " " ? "\u00A0" : char}
-            </span>
-          ))}
-        </span>
-        <span className="sr-only">
-          {isSubmitting ? "Sending..." : BTN_TEXT}
-        </span>
-      </span>
+      )}
     </button>
   );
 }
@@ -235,18 +271,14 @@ function ContactFormContent() {
       <div className="border-foreground/10 border-t" />
 
       <div className="mt-10 flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between md:mt-12">
-        <SubmitButton isSubmitting={isSubmitting} />
+        <SubmitButton
+          isSubmitting={isSubmitting}
+          isSent={formStatus === "success"}
+        />
 
-        {formStatus !== "idle" && (
-          <p
-            className={cn(
-              "font-sans text-[11px] font-semibold tracking-[0.2em] uppercase",
-              formStatus === "success" && "text-foreground/60",
-              formStatus === "error" && "text-red-500",
-            )}
-          >
-            {formStatus === "success" && "Message sent — I'll be in touch soon"}
-            {formStatus === "error" && "Something went wrong. Try again"}
+        {formStatus === "error" && (
+          <p className="animate-in fade-in slide-in-from-bottom-2 font-sans text-[11px] font-semibold tracking-[0.2em] text-red-500 uppercase duration-300">
+            Something went wrong. Try again
           </p>
         )}
       </div>
