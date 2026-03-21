@@ -60,7 +60,7 @@ export default function Contact() {
               title="Volunote — Zen Software Engineer"
               width={200}
               height={200}
-              className="h-20 w-20 object-cover xl:h-28 xl:w-28"
+              className="h-20 w-20 object-cover xl:h-28 xl:w-28 rounded-full"
               loading="eager"
             />
             <div className="hidden xl:block">

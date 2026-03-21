@@ -279,6 +279,27 @@ function ContactFormContent() {
           </p>
         )}
       </div>
+      <p className="text-foreground/30 mt-6 font-sans text-[10px] leading-relaxed">
+        This site is protected by reCAPTCHA and the Google{" "}
+        <a
+          href="https://policies.google.com/privacy"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline"
+        >
+          Privacy Policy
+        </a>{" "}
+        and{" "}
+        <a
+          href="https://policies.google.com/terms"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline"
+        >
+          Terms of Service
+        </a>{" "}
+        apply.
+      </p>
     </form>
   );
 }
@@ -288,9 +309,9 @@ export default function ContactForm() {
     <GoogleReCaptchaProvider
       reCaptchaKey={process.env.NEXT_PUBLIC_GOOGLE_RECAPTCHA_SITE_KEY || ""}
       scriptProps={{
-        async: false,
-        defer: false,
-        appendTo: "head",
+        async: true,
+        defer: true,
+        appendTo: "body",
         nonce: undefined,
       }}
     >

@@ -120,3 +120,10 @@
     cursor: pointer;
   }
 }
+
+/* Hide reCAPTCHA v3 badge — disclosure text shown in ContactForm instead */
+.grecaptcha-badge {
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}

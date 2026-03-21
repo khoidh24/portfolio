@@ -136,18 +136,19 @@ export default function Template({ children }: Props) {
 
   // Lenis setup — runs once, never torn down on navigation
   useLayoutEffect(() => {
+    ScrollTrigger.normalizeScroll(true);
     const lenis = new Lenis({
-      duration: 0.7,
-      easing: (t) => 1 - Math.pow(1 - t, 3),
+      duration: 0.6,
+      easing: (t) => 1 - Math.pow(1 - t, 2.5),
       smoothWheel: true,
-      wheelMultiplier: 1,
-      touchMultiplier: 1.5,
+      wheelMultiplier: 1.2,
+      touchMultiplier: 1.2,
     });
     lenisRef.current = lenis;
     // Expose for TableOfContents and other consumers
     (window as { __lenis?: Lenis }).__lenis = lenis;
     lenis.on("scroll", ScrollTrigger.update);
-    const tick = (time: number) => lenis.raf(time * 1000);
+    const tick = (time: number) => lenis.raf(time * 700);
     gsap.ticker.add(tick);
     gsap.ticker.lagSmoothing(0);
     return () => {

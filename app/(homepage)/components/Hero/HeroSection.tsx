@@ -8,14 +8,17 @@ import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 
 const BATCH_SIZE = 8;
-// Number of parallel decode workers
 const WORKER_COUNT = 4;
+
+const getIsMobile = () =>
+  typeof window !== "undefined" && window.innerWidth < 768;
+const getPixelRatio = () => Math.min(window.devicePixelRatio || 1, 2);
 
 export default function HeroSection() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
   const contextRef = useRef<CanvasRenderingContext2D | null>(null);
   const imagesRef = useRef<HTMLImageElement[]>([]);
-  // Pre-decoded bitmaps — populated lazily by workers, never all at once
   const bitmapsRef = useRef<(ImageBitmap | null)[]>(
     new Array(TOTAL_FRAMES).fill(null),
   );
@@ -26,9 +29,11 @@ export default function HeroSection() {
   const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initializedRef = useRef(false);
   const mountedRef = useRef(false);
+  const isMobileRef = useRef(false);
   const workersRef = useRef<Worker[]>([]);
   const decodeQueueRef = useRef<number[]>([]);
   const decodingRef = useRef<Set<number>>(new Set());
+  const lastEnqueueFrameRef = useRef(-1);
 
   const setImages = useLoadImageStore((state) => state.setImages);
   const images = useLoadImageStore((state) => state.images);
@@ -40,9 +45,29 @@ export default function HeroSection() {
   const currentFrame = (index: number) =>
     `/motion/frame_${index.toString().padStart(5, "0")}.webp`;
 
-  // ── Worker pool ──────────────────────────────────────────────────────────
+  // ── Worker pool (desktop only) ───────────────────────────────────────────
+  const drainQueue = useCallback(() => {
+    const queue = decodeQueueRef.current;
+    const decoding = decodingRef.current;
+    const workers = workersRef.current;
+    const bitmaps = bitmapsRef.current;
+    if (!workers.length) return;
+
+    let wi = 0;
+    while (queue.length > 0 && decoding.size < workers.length) {
+      const idx = queue.shift()!;
+      if (bitmaps[idx] !== null || decoding.has(idx)) continue;
+      decoding.add(idx);
+      workers[wi % workers.length].postMessage({
+        index: idx,
+        src: currentFrame(idx),
+      });
+      wi++;
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const initWorkers = useCallback(() => {
-    if (typeof Worker === "undefined") return;
+    if (typeof Worker === "undefined" || isMobileRef.current) return;
     workersRef.current = Array.from({ length: WORKER_COUNT }, () => {
       const w = new Worker("/frame-decoder.worker.js");
       w.onmessage = (e) => {
@@ -52,43 +77,27 @@ export default function HeroSection() {
           error?: boolean;
         };
         decodingRef.current.delete(index);
-        if (!error && bitmap) {
+        if (!error && bitmap && mountedRef.current) {
           bitmapsRef.current[index] = bitmap;
-          // If this is the current frame, render immediately
-          if (videoFrameRef.current.frame === index) {
-            scheduleRender();
-          }
+          if (videoFrameRef.current.frame === index) scheduleRender();
         }
-        // Drain queue
         drainQueue();
       };
       return w;
     });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [drainQueue]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const drainQueue = useCallback(() => {
-    const queue = decodeQueueRef.current;
-    const decoding = decodingRef.current;
-    const workers = workersRef.current;
-    const bitmaps = bitmapsRef.current;
-
-    while (queue.length > 0 && decoding.size < WORKER_COUNT) {
-      const idx = queue.shift()!;
-      if (bitmaps[idx] !== null || decoding.has(idx)) continue;
-      decoding.add(idx);
-      const worker = workers[decoding.size % WORKER_COUNT] ?? workers[0];
-      worker.postMessage({ index: idx, src: currentFrame(idx) });
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Enqueue frames around current position — prioritise nearby frames
   const enqueueAround = useCallback(
     (center: number, radius = 20) => {
+      if (isMobileRef.current) return;
+      if (Math.abs(center - lastEnqueueFrameRef.current) < 3) return;
+      lastEnqueueFrameRef.current = center;
+
       const queue = decodeQueueRef.current;
       const bitmaps = bitmapsRef.current;
       const decoding = decodingRef.current;
-
       const toAdd: number[] = [];
+
       for (let d = 0; d <= radius; d++) {
         const candidates = d === 0 ? [center] : [center + d, center - d];
         for (const i of candidates) {
@@ -98,7 +107,6 @@ export default function HeroSection() {
           toAdd.push(i);
         }
       }
-      // Prepend so nearby frames jump the queue
       decodeQueueRef.current = [...toAdd, ...queue];
       drainQueue();
     },
@@ -112,23 +120,13 @@ export default function HeroSection() {
     decodingRef.current.clear();
   }, []);
 
-  // ── Canvas ───────────────────────────────────────────────────────────────
-  const updateCanvasSize = useCallback(() => {
-    const canvas = canvasRef.current;
-    const context = contextRef.current;
-    if (!canvas || !context) return;
-
-    const pixelRatio = window.devicePixelRatio || 1;
-    const w = window.innerWidth;
-    const h = window.innerHeight;
-
-    canvas.width = w * pixelRatio;
-    canvas.height = h * pixelRatio;
-    canvas.style.width = `${w}px`;
-    canvas.style.height = `${h}px`;
-    context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-
-    canvasDimsRef.current = { w, h };
+  // ── Render ───────────────────────────────────────────────────────────────
+  // Mobile: swap <img> src — browser handles decode/cache, zero GPU overhead
+  const renderMobile = useCallback(() => {
+    const el = imgRef.current;
+    if (!el) return;
+    const src = currentFrame(videoFrameRef.current.frame);
+    if (!el.src.endsWith(src)) el.src = src;
   }, []);
 
   const drawSource = useCallback(
@@ -152,29 +150,28 @@ export default function HeroSection() {
         drawX = 0;
         drawY = (h - drawHeight) / 2;
       }
-
       context.clearRect(0, 0, w, h);
       context.drawImage(source, drawX, drawY, drawWidth, drawHeight);
     },
     [],
   );
 
-  const render = useCallback(() => {
+  const renderDesktop = useCallback(() => {
     const { frame } = videoFrameRef.current;
-
-    // Prefer pre-decoded bitmap (zero decode cost on main thread)
     const bitmap = bitmapsRef.current[frame];
     if (bitmap) {
       drawSource(bitmap, bitmap.width, bitmap.height);
       return;
     }
-
-    // Fallback: HTMLImageElement (browser decodes on draw, but still works)
     const img = imagesRef.current[frame];
-    if (img?.complete && img.naturalWidth > 0) {
+    if (img?.complete && img.naturalWidth > 0)
       drawSource(img, img.naturalWidth, img.naturalHeight);
-    }
   }, [drawSource]);
+
+  const render = useCallback(() => {
+    if (isMobileRef.current) renderMobile();
+    else renderDesktop();
+  }, [renderMobile, renderDesktop]);
 
   const scheduleRender = useCallback(() => {
     if (rafRef.current !== null) return;
@@ -184,10 +181,30 @@ export default function HeroSection() {
     });
   }, [render]);
 
+  // ── Canvas size (desktop only) ───────────────────────────────────────────
+  const updateCanvasSize = useCallback(() => {
+    const canvas = canvasRef.current;
+    const context = contextRef.current;
+    if (!canvas || !context) return;
+
+    const pixelRatio = getPixelRatio();
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+
+    canvas.width = w * pixelRatio;
+    canvas.height = h * pixelRatio;
+    canvas.style.width = `${w}px`;
+    canvas.style.height = `${h}px`;
+    context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    canvasDimsRef.current = { w, h };
+  }, []);
+
   const handleResize = useCallback(() => {
     if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
     resizeTimerRef.current = setTimeout(() => {
-      updateCanvasSize();
+      if (!isMobileRef.current) updateCanvasSize();
+      else
+        canvasDimsRef.current = { w: window.innerWidth, h: window.innerHeight };
       render();
       scrollTriggerRef.current?.refresh();
     }, 150);
@@ -198,6 +215,7 @@ export default function HeroSection() {
     scrollTriggerRef.current?.kill();
 
     const { h } = canvasDimsRef.current;
+    const mobile = isMobileRef.current;
     const last = {
       navZone: -1,
       headerVisible: -1,
@@ -219,7 +237,7 @@ export default function HeroSection() {
       end: `+=${h * 4.5}px`,
       pin: true,
       pinSpacing: true,
-      scrub: 0.5,
+      scrub: mobile ? true : 0.5,
       onUpdate: (self) => {
         const progress = self.progress;
 
@@ -228,11 +246,9 @@ export default function HeroSection() {
         if (videoFrameRef.current.frame !== targetFrame) {
           videoFrameRef.current.frame = targetFrame;
           scheduleRender();
-          // Pre-decode frames ahead of scroll direction
-          enqueueAround(targetFrame, 30);
+          if (!mobile) enqueueAround(targetFrame, 30);
         }
 
-        // Nav opacity (0–10%)
         const navZone = progress <= 0.1 ? 0 : progress >= 0.85 ? 2 : 1;
         if (navZone === 0) {
           const opacity = Math.round((1 - progress / 0.1) * 100) / 100;
@@ -270,7 +286,6 @@ export default function HeroSection() {
         }
         last.navZone = navZone;
 
-        // Hero header 3D zoom (0–25%)
         const headerVisible = progress <= 0.25 ? 1 : 0;
         if (headerVisible) {
           const zProgress = progress / 0.25;
@@ -287,7 +302,6 @@ export default function HeroSection() {
         }
         last.headerVisible = headerVisible;
 
-        // Canvas border-radius reveal (85–100%)
         const wrapperZone = progress >= 0.85 ? 1 : 0;
         if (wrapperZone) {
           const { w } = canvasDimsRef.current;
@@ -307,13 +321,12 @@ export default function HeroSection() {
             setNavOpacity?.(revealOpacity);
             last.navOpacity = revealOpacity;
           }
-          if (last.wrapperZone !== 1) {
+          if (last.wrapperZone !== 1)
             gsap.set(navEls, {
               zIndex: 1,
               color: "var(--foreground)",
               borderColor: "var(--foreground)",
             });
-          }
         } else if (last.wrapperZone !== 0) {
           if (heroWrapper)
             gsap.set(heroWrapper, { margin: "0 0px", borderRadius: 0 });
@@ -333,13 +346,19 @@ export default function HeroSection() {
   }, []);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const context = canvas.getContext("2d");
-    if (!context) return;
+    isMobileRef.current = getIsMobile();
+    const mobile = isMobileRef.current;
 
-    contextRef.current = context;
-    updateCanvasSize();
+    if (!mobile) {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const context = canvas.getContext("2d", { alpha: false });
+      if (!context) return;
+      contextRef.current = context;
+      updateCanvasSize();
+    } else {
+      canvasDimsRef.current = { w: window.innerWidth, h: window.innerHeight };
+    }
 
     if (initializedRef.current) return;
     initializedRef.current = true;
@@ -356,9 +375,10 @@ export default function HeroSection() {
           if (!mountedRef.current) return;
           setIsReady(true);
           ScrollTrigger.refresh();
-          // Start workers and pre-decode first ~40 frames immediately
-          initWorkers();
-          enqueueAround(0, 40);
+          if (!mobile) {
+            initWorkers();
+            enqueueAround(0, 40);
+          }
         });
       });
     };
@@ -372,19 +392,15 @@ export default function HeroSection() {
       const loadBatch = (startIdx: number) => {
         if (startIdx >= TOTAL_FRAMES) return;
         const end = Math.min(startIdx + BATCH_SIZE, TOTAL_FRAMES);
-
         for (let i = startIdx; i < end; i++) {
           const img = new Image();
           img.decoding = "async";
           newImages[i] = img;
-
           img.onload = img.onerror = () => {
             imagesLoaded++;
-
             if (imagesLoaded % 16 === 0 || imagesLoaded === TOTAL_FRAMES) {
               if (mountedRef.current) setLoadedImageCount(imagesLoaded);
             }
-
             if (imagesLoaded === TOTAL_FRAMES) {
               if (mountedRef.current) {
                 setImages(newImages);
@@ -392,30 +408,24 @@ export default function HeroSection() {
               }
               return;
             }
-
-            if (imagesLoaded % BATCH_SIZE === 0) {
-              loadBatch(imagesLoaded);
-            }
+            if (imagesLoaded % BATCH_SIZE === 0) loadBatch(imagesLoaded);
           };
-
           img.src = currentFrame(i);
         }
       };
 
       loadBatch(0);
       loadBatch(BATCH_SIZE);
-      loadBatch(BATCH_SIZE * 2);
+      if (!mobile) loadBatch(BATCH_SIZE * 2);
     }
 
     window.addEventListener("resize", handleResize);
-
     return () => {
       scrollTriggerRef.current?.kill();
       window.removeEventListener("resize", handleResize);
       if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
       terminateWorkers();
-      // Free GPU memory for decoded bitmaps
       bitmapsRef.current.forEach((bmp) => bmp?.close());
       bitmapsRef.current = new Array(TOTAL_FRAMES).fill(null);
     };
@@ -425,7 +435,16 @@ export default function HeroSection() {
   return (
     <section className="hero">
       <div className="hero__wrapper box-border flex items-center justify-center rounded-2xl">
-        <canvas ref={canvasRef} />
+        {/* Desktop: canvas with bitmap pre-decode */}
+        <canvas ref={canvasRef} className="max-md:hidden" />
+        {/* Mobile: plain <img> swap — browser handles decode/cache, no GPU overhead */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          ref={imgRef}
+          alt=""
+          className="md:hidden h-screen w-full object-cover"
+          src={currentFrame(0)}
+        />
       </div>
       <div className="hero__content absolute top-2/5 left-1/2 -translate-x-1/2 transform py-2 perspective-distant transform-3d">
         <div className="hero__header text-background absolute top-1/2 left-1/2 flex w-screen origin-center -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-4 text-center will-change-[transform,opacity]">
