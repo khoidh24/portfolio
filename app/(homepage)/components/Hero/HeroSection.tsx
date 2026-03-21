@@ -8,16 +8,27 @@ import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 
 const BATCH_SIZE = 8;
+// Number of parallel decode workers
+const WORKER_COUNT = 4;
 
 export default function HeroSection() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const contextRef = useRef<CanvasRenderingContext2D | null>(null);
   const imagesRef = useRef<HTMLImageElement[]>([]);
+  // Pre-decoded bitmaps — populated lazily by workers, never all at once
+  const bitmapsRef = useRef<(ImageBitmap | null)[]>(
+    new Array(TOTAL_FRAMES).fill(null),
+  );
   const videoFrameRef = useRef<{ frame: number }>({ frame: 0 });
   const scrollTriggerRef = useRef<ScrollTrigger | null>(null);
   const canvasDimsRef = useRef({ w: 0, h: 0 });
   const rafRef = useRef<number | null>(null);
   const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const initializedRef = useRef(false);
+  const mountedRef = useRef(false);
+  const workersRef = useRef<Worker[]>([]);
+  const decodeQueueRef = useRef<number[]>([]);
+  const decodingRef = useRef<Set<number>>(new Set());
 
   const setImages = useLoadImageStore((state) => state.setImages);
   const images = useLoadImageStore((state) => state.images);
@@ -29,6 +40,79 @@ export default function HeroSection() {
   const currentFrame = (index: number) =>
     `/motion/frame_${index.toString().padStart(5, "0")}.webp`;
 
+  // ── Worker pool ──────────────────────────────────────────────────────────
+  const initWorkers = useCallback(() => {
+    if (typeof Worker === "undefined") return;
+    workersRef.current = Array.from({ length: WORKER_COUNT }, () => {
+      const w = new Worker("/frame-decoder.worker.js");
+      w.onmessage = (e) => {
+        const { index, bitmap, error } = e.data as {
+          index: number;
+          bitmap?: ImageBitmap;
+          error?: boolean;
+        };
+        decodingRef.current.delete(index);
+        if (!error && bitmap) {
+          bitmapsRef.current[index] = bitmap;
+          // If this is the current frame, render immediately
+          if (videoFrameRef.current.frame === index) {
+            scheduleRender();
+          }
+        }
+        // Drain queue
+        drainQueue();
+      };
+      return w;
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const drainQueue = useCallback(() => {
+    const queue = decodeQueueRef.current;
+    const decoding = decodingRef.current;
+    const workers = workersRef.current;
+    const bitmaps = bitmapsRef.current;
+
+    while (queue.length > 0 && decoding.size < WORKER_COUNT) {
+      const idx = queue.shift()!;
+      if (bitmaps[idx] !== null || decoding.has(idx)) continue;
+      decoding.add(idx);
+      const worker = workers[decoding.size % WORKER_COUNT] ?? workers[0];
+      worker.postMessage({ index: idx, src: currentFrame(idx) });
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Enqueue frames around current position — prioritise nearby frames
+  const enqueueAround = useCallback(
+    (center: number, radius = 20) => {
+      const queue = decodeQueueRef.current;
+      const bitmaps = bitmapsRef.current;
+      const decoding = decodingRef.current;
+
+      const toAdd: number[] = [];
+      for (let d = 0; d <= radius; d++) {
+        const candidates = d === 0 ? [center] : [center + d, center - d];
+        for (const i of candidates) {
+          if (i < 0 || i >= TOTAL_FRAMES) continue;
+          if (bitmaps[i] !== null || decoding.has(i) || queue.includes(i))
+            continue;
+          toAdd.push(i);
+        }
+      }
+      // Prepend so nearby frames jump the queue
+      decodeQueueRef.current = [...toAdd, ...queue];
+      drainQueue();
+    },
+    [drainQueue],
+  );
+
+  const terminateWorkers = useCallback(() => {
+    workersRef.current.forEach((w) => w.terminate());
+    workersRef.current = [];
+    decodeQueueRef.current = [];
+    decodingRef.current.clear();
+  }, []);
+
+  // ── Canvas ───────────────────────────────────────────────────────────────
   const updateCanvasSize = useCallback(() => {
     const canvas = canvasRef.current;
     const context = contextRef.current;
@@ -42,42 +126,55 @@ export default function HeroSection() {
     canvas.height = h * pixelRatio;
     canvas.style.width = `${w}px`;
     canvas.style.height = `${h}px`;
-    // Reset transform before scaling to avoid cumulative scale on resize
     context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
 
     canvasDimsRef.current = { w, h };
   }, []);
 
+  const drawSource = useCallback(
+    (source: HTMLImageElement | ImageBitmap, sw: number, sh: number) => {
+      const context = contextRef.current;
+      const { w, h } = canvasDimsRef.current;
+      if (!context || !w || !h) return;
+
+      const imageAspect = sw / sh;
+      const canvasAspect = w / h;
+      let drawWidth: number, drawHeight: number, drawX: number, drawY: number;
+
+      if (imageAspect > canvasAspect) {
+        drawHeight = h;
+        drawWidth = drawHeight * imageAspect;
+        drawX = (w - drawWidth) / 2;
+        drawY = 0;
+      } else {
+        drawWidth = w;
+        drawHeight = drawWidth / imageAspect;
+        drawX = 0;
+        drawY = (h - drawHeight) / 2;
+      }
+
+      context.clearRect(0, 0, w, h);
+      context.drawImage(source, drawX, drawY, drawWidth, drawHeight);
+    },
+    [],
+  );
+
   const render = useCallback(() => {
-    const context = contextRef.current;
-    const imgs = imagesRef.current;
     const { frame } = videoFrameRef.current;
-    const { w, h } = canvasDimsRef.current;
 
-    if (!context || !w || !h) return;
-
-    const img = imgs[frame];
-    if (!img?.complete || img.naturalWidth === 0) return;
-
-    const imageAspect = img.naturalWidth / img.naturalHeight;
-    const canvasAspect = w / h;
-
-    let drawWidth: number, drawHeight: number, drawX: number, drawY: number;
-    if (imageAspect > canvasAspect) {
-      drawHeight = h;
-      drawWidth = drawHeight * imageAspect;
-      drawX = (w - drawWidth) / 2;
-      drawY = 0;
-    } else {
-      drawWidth = w;
-      drawHeight = drawWidth / imageAspect;
-      drawX = 0;
-      drawY = (h - drawHeight) / 2;
+    // Prefer pre-decoded bitmap (zero decode cost on main thread)
+    const bitmap = bitmapsRef.current[frame];
+    if (bitmap) {
+      drawSource(bitmap, bitmap.width, bitmap.height);
+      return;
     }
 
-    context.clearRect(0, 0, w, h);
-    context.drawImage(img, drawX, drawY, drawWidth, drawHeight);
-  }, []);
+    // Fallback: HTMLImageElement (browser decodes on draw, but still works)
+    const img = imagesRef.current[frame];
+    if (img?.complete && img.naturalWidth > 0) {
+      drawSource(img, img.naturalWidth, img.naturalHeight);
+    }
+  }, [drawSource]);
 
   const scheduleRender = useCallback(() => {
     if (rafRef.current !== null) return;
@@ -96,6 +193,7 @@ export default function HeroSection() {
     }, 150);
   }, [updateCanvasSize, render]);
 
+  // ── ScrollTrigger ────────────────────────────────────────────────────────
   const setupScrollTrigger = useCallback(() => {
     scrollTriggerRef.current?.kill();
 
@@ -121,16 +219,17 @@ export default function HeroSection() {
       end: `+=${h * 4.5}px`,
       pin: true,
       pinSpacing: true,
-      scrub: 1,
+      scrub: 0.5,
       onUpdate: (self) => {
         const progress = self.progress;
 
-        // Frame update — throttled via scheduleRender
         const animationProgress = Math.min(progress / 0.9, 1);
         const targetFrame = Math.round(animationProgress * (TOTAL_FRAMES - 1));
         if (videoFrameRef.current.frame !== targetFrame) {
           videoFrameRef.current.frame = targetFrame;
           scheduleRender();
+          // Pre-decode frames ahead of scroll direction
+          enqueueAround(targetFrame, 30);
         }
 
         // Nav opacity (0–10%)
@@ -222,10 +321,16 @@ export default function HeroSection() {
         last.wrapperZone = wrapperZone;
       },
     });
-  }, [scheduleRender]);
+  }, [scheduleRender, enqueueAround]);
 
-  // Separate flag to track if images were already loaded — avoids re-running effect on store update
-  const initializedRef = useRef(false);
+  // ── Mount / init ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    mountedRef.current = true;
+    initializedRef.current = false;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -236,32 +341,36 @@ export default function HeroSection() {
     contextRef.current = context;
     updateCanvasSize();
 
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+
     const finishSetup = (imgs: HTMLImageElement[]) => {
+      if (!mountedRef.current) return;
       imagesRef.current = imgs;
       videoFrameRef.current.frame = 0;
       render();
       requestAnimationFrame(() => {
+        if (!mountedRef.current) return;
         setupScrollTrigger();
         requestAnimationFrame(() => {
+          if (!mountedRef.current) return;
           setIsReady(true);
           ScrollTrigger.refresh();
+          // Start workers and pre-decode first ~40 frames immediately
+          initWorkers();
+          enqueueAround(0, 40);
         });
       });
     };
-
-    if (initializedRef.current) return;
-    initializedRef.current = true;
 
     if (images.length > 0) {
       finishSetup(images);
     } else {
       const newImages: HTMLImageElement[] = new Array(TOTAL_FRAMES);
       let imagesLoaded = 0;
-      let batchesInFlight = 0;
 
       const loadBatch = (startIdx: number) => {
         if (startIdx >= TOTAL_FRAMES) return;
-        batchesInFlight++;
         const end = Math.min(startIdx + BATCH_SIZE, TOTAL_FRAMES);
 
         for (let i = startIdx; i < end; i++) {
@@ -273,19 +382,19 @@ export default function HeroSection() {
             imagesLoaded++;
 
             if (imagesLoaded % 16 === 0 || imagesLoaded === TOTAL_FRAMES) {
-              setLoadedImageCount(imagesLoaded);
+              if (mountedRef.current) setLoadedImageCount(imagesLoaded);
             }
 
             if (imagesLoaded === TOTAL_FRAMES) {
-              setImages(newImages);
-              finishSetup(newImages);
+              if (mountedRef.current) {
+                setImages(newImages);
+                finishSetup(newImages);
+              }
               return;
             }
 
-            // When this batch finishes, kick off the next one
             if (imagesLoaded % BATCH_SIZE === 0) {
-              batchesInFlight--;
-              loadBatch(imagesLoaded + batchesInFlight * BATCH_SIZE);
+              loadBatch(imagesLoaded);
             }
           };
 
@@ -293,7 +402,6 @@ export default function HeroSection() {
         }
       };
 
-      // Kick off first 3 batches in parallel for faster initial load
       loadBatch(0);
       loadBatch(BATCH_SIZE);
       loadBatch(BATCH_SIZE * 2);
@@ -306,6 +414,10 @@ export default function HeroSection() {
       window.removeEventListener("resize", handleResize);
       if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+      terminateWorkers();
+      // Free GPU memory for decoded bitmaps
+      bitmapsRef.current.forEach((bmp) => bmp?.close());
+      bitmapsRef.current = new Array(TOTAL_FRAMES).fill(null);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

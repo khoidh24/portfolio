@@ -133,8 +133,9 @@ export const pageOutLoadingAnimation = (
   skipLoadingPercent?: boolean,
 ) => {
   runPageOutLoadingOverlayAnimation(() => {
+    // Kill only ScrollTrigger instances, NOT gsap.globalTimeline
+    // (clearing globalTimeline kills the Lenis ticker and breaks smooth scroll)
     ScrollTrigger.getAll().forEach((st) => st.kill(true));
-    gsap.globalTimeline.clear();
     router.push(href);
     onComplete?.();
     if (skipLoadingPercent) {

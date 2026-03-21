@@ -225,9 +225,8 @@ function ContactFormContent() {
         <div
           key={formItem.name}
           className={cn(
-            "border-foreground/10 group border-t px-1 py-6 md:py-8",
-            formItem.error && "border-t-red-400/40",
-            formItems.indexOf(formItem) === 0 && "border-t-0",
+            "border-foreground/10 group border-b px-1 py-6 md:py-8",
+            formItem.error && "border-b-red-400/60",
           )}
         >
           <label
@@ -267,8 +266,6 @@ function ContactFormContent() {
           )}
         </div>
       ))}
-
-      <div className="border-foreground/10 border-t" />
 
       <div className="mt-10 flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between md:mt-12">
         <SubmitButton
