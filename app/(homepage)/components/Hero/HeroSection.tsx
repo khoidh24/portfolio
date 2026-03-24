@@ -14,14 +14,19 @@ const getIsMobile = () =>
   typeof window !== "undefined" && window.innerWidth < 768;
 const getPixelRatio = () => Math.min(window.devicePixelRatio || 1, 2);
 
+// Pre-build frame URL cache — avoids string allocation on every scroll tick
+const FRAME_URLS = Array.from(
+  { length: TOTAL_FRAMES },
+  (_, i) => `/motion/frame_${i.toString().padStart(5, "0")}.webp`,
+);
+const currentFrame = (index: number) => FRAME_URLS[index];
+
 export default function HeroSection() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const contextRef = useRef<CanvasRenderingContext2D | null>(null);
   const imagesRef = useRef<HTMLImageElement[]>([]);
-  const bitmapsRef = useRef<(ImageBitmap | null)[]>(
-    new Array(TOTAL_FRAMES).fill(null),
-  );
+  const bitmapsRef = useRef<(ImageBitmap | null)[]>([]);
   const videoFrameRef = useRef<{ frame: number }>({ frame: 0 });
   const scrollTriggerRef = useRef<ScrollTrigger | null>(null);
   const canvasDimsRef = useRef({ w: 0, h: 0 });
@@ -35,15 +40,10 @@ export default function HeroSection() {
   const decodingRef = useRef<Set<number>>(new Set());
   const lastEnqueueFrameRef = useRef(-1);
 
-  const setImages = useLoadImageStore((state) => state.setImages);
-  const images = useLoadImageStore((state) => state.images);
-  const setIsReady = useLoadImageStore((state) => state.setIsReady);
-  const setLoadedImageCount = useLoadImageStore(
-    (state) => state.setLoadedImageCount,
-  );
-
-  const currentFrame = (index: number) =>
-    `/motion/frame_${index.toString().padStart(5, "0")}.webp`;
+  const setImages = useLoadImageStore((s) => s.setImages);
+  const images = useLoadImageStore((s) => s.images);
+  const setIsReady = useLoadImageStore((s) => s.setIsReady);
+  const setLoadedImageCount = useLoadImageStore((s) => s.setLoadedImageCount);
 
   // ── Worker pool (desktop only) ───────────────────────────────────────────
   const drainQueue = useCallback(() => {
@@ -96,15 +96,17 @@ export default function HeroSection() {
       const queue = decodeQueueRef.current;
       const bitmaps = bitmapsRef.current;
       const decoding = decodingRef.current;
+      // Use a Set for O(1) lookup instead of array.includes O(n)
+      const queued = new Set(queue);
       const toAdd: number[] = [];
 
       for (let d = 0; d <= radius; d++) {
         const candidates = d === 0 ? [center] : [center + d, center - d];
         for (const i of candidates) {
           if (i < 0 || i >= TOTAL_FRAMES) continue;
-          if (bitmaps[i] !== null || decoding.has(i) || queue.includes(i))
-            continue;
+          if (bitmaps[i] != null || decoding.has(i) || queued.has(i)) continue;
           toAdd.push(i);
+          queued.add(i);
         }
       }
       decodeQueueRef.current = [...toAdd, ...queue];
@@ -365,6 +367,11 @@ export default function HeroSection() {
 
     if (initializedRef.current) return;
     initializedRef.current = true;
+
+    // Init bitmaps array once
+    if (bitmapsRef.current.length === 0) {
+      bitmapsRef.current = new Array(TOTAL_FRAMES).fill(null);
+    }
 
     const finishSetup = (imgs: HTMLImageElement[]) => {
       if (!mountedRef.current) return;

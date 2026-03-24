@@ -4,7 +4,6 @@ import { useRef, useEffect } from "react";
 
 import VolunoteWordmark from "./VolunoteWordmark";
 import { usePageReady } from "@/hooks/usePageReady";
-import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 
 const NAV_GROUPS = [
@@ -39,54 +38,39 @@ export default function FooterSection() {
   const containerRef = useRef<HTMLDivElement>(null);
   const animatedRef = useRef(false);
 
-  // Set initial hidden state as soon as isPageReady — before IO fires
-  useGSAP(
-    () => {
-      if (!isPageReady) {
-        animatedRef.current = false;
-        return;
-      }
-      gsap.set(".footer__wordmark", { yPercent: -100 });
-      gsap.set(".footer__meta", { opacity: 0, y: 12 });
-    },
-    { dependencies: [isPageReady], scope: containerRef },
-  );
-
-  // IntersectionObserver — fires as soon as footer enters viewport, no scroll dependency
   useEffect(() => {
-    if (!isPageReady) return;
-
+    if (!isPageReady) {
+      animatedRef.current = false;
+      return;
+    }
     const container = containerRef.current;
     if (!container) return;
 
-    const animate = () => {
-      if (animatedRef.current) return;
-      animatedRef.current = true;
-      gsap.to(".footer__wordmark", {
-        yPercent: 0,
-        duration: 1,
-        ease: "power4.out",
-      });
-      gsap.to(".footer__meta", {
-        opacity: 1,
-        y: 0,
-        duration: 0.7,
-        ease: "power3.out",
-        stagger: 0.06,
-        delay: 0.3,
-      });
-    };
+    // Set hidden state immediately
+    gsap.set(".footer__wordmark", { yPercent: -100 });
+    gsap.set(".footer__meta", { opacity: 0, y: 12 });
 
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting) {
-          animate();
-          observer.disconnect();
-        }
+        if (!entries[0].isIntersecting || animatedRef.current) return;
+        animatedRef.current = true;
+        observer.disconnect();
+        gsap.to(".footer__wordmark", {
+          yPercent: 0,
+          duration: 1,
+          ease: "power4.out",
+        });
+        gsap.to(".footer__meta", {
+          opacity: 1,
+          y: 0,
+          duration: 0.7,
+          ease: "power3.out",
+          stagger: 0.06,
+          delay: 0.3,
+        });
       },
       { threshold: 0.01 },
     );
-
     observer.observe(container);
     return () => observer.disconnect();
   }, [isPageReady]);

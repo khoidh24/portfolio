@@ -27,36 +27,31 @@ import {
 
 gsap.registerPlugin(ScrollTrigger);
 
-// Dispatched once the page-in animation completes — sections listen for this
-// instead of subscribing to a Zustand store.
 export const dispatchPageReady = () =>
   window.dispatchEvent(new CustomEvent("pageready"));
 
 type Props = { children: ReactNode };
 
+// Slot digit — memoized, only re-renders when digit changes
 const SlotDigit = memo(function SlotDigit({ digit }: { digit: number }) {
-  const fontSize = "clamp(80px, 18vw, 180px)";
+  const size = "clamp(80px, 18vw, 180px)";
   return (
     <div
       className="relative overflow-hidden"
-      style={{
-        width: "clamp(48px, 11vw, 110px)",
-        height: "clamp(80px, 18vw, 180px)",
-      }}
+      style={{ width: "clamp(48px, 11vw, 110px)", height: size }}
     >
       <div
-        className="flex flex-col transition-transform duration-300 ease-out"
-        style={{ transform: `translateY(-${digit * 10}%)` }}
+        className="flex flex-col"
+        style={{
+          transform: `translateY(-${digit * 10}%)`,
+          transition: "transform 0.3s ease-out",
+        }}
       >
         {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((d) => (
           <div
             key={d}
-            className="text-background flex shrink-0 items-center justify-center leading-none font-bold"
-            style={{
-              fontSize,
-              height: "clamp(80px, 18vw, 180px)",
-              lineHeight: 1,
-            }}
+            className="text-background flex shrink-0 items-center justify-center font-bold leading-none"
+            style={{ fontSize: size, height: size, lineHeight: 1 }}
           >
             {d}
           </div>
@@ -83,35 +78,32 @@ export default function Template({ children }: Props) {
   const router = useRouter();
   const pathname = usePathname();
 
-  const isReady = useLoadImageStore((state) => state.isReady);
-  const loadedImageCount = useLoadImageStore((state) => state.loadedImageCount);
-
-  const percentNumber = useLoadingProgressStore((state) => state.percentNumber);
-  const setPercentNumber = useLoadingProgressStore(
-    (state) => state.setPercentNumber,
-  );
-  const isLoadingComplete = useLoadingProgressStore(
-    (state) => state.isLoadingComplete,
-  );
+  // Split selectors to avoid re-renders from unrelated store changes
+  const isReady = useLoadImageStore((s) => s.isReady);
+  const loadedImageCount = useLoadImageStore((s) => s.loadedImageCount);
+  const percentNumber = useLoadingProgressStore((s) => s.percentNumber);
+  const setPercentNumber = useLoadingProgressStore((s) => s.setPercentNumber);
+  const isLoadingComplete = useLoadingProgressStore((s) => s.isLoadingComplete);
   const setIsLoadingComplete = useLoadingProgressStore(
-    (state) => state.setIsLoadingComplete,
+    (s) => s.setIsLoadingComplete,
   );
   const hasInitialLoadCompleted = useLoadingProgressStore(
-    (state) => state.hasInitialLoadCompleted,
+    (s) => s.hasInitialLoadCompleted,
   );
   const setHasInitialLoadCompleted = useLoadingProgressStore(
-    (state) => state.setHasInitialLoadCompleted,
+    (s) => s.setHasInitialLoadCompleted,
   );
 
   const animationTriggeredRef = useRef(false);
+  const pageOutInProgressRef = useRef(false);
   const pathnameRef = useRef(pathname);
   const hasInitialLoadCompletedRef = useRef(hasInitialLoadCompleted);
-  const isDocumentReadyRef = useRef(false); // ref — doesn't need to drive rendering
+  const isDocumentReadyRef = useRef(false);
   const lenisRef = useRef<Lenis | null>(null);
 
   const [animatedPercent, setAnimatedPercent] = useState(0);
 
-  // Keep refs in sync
+  // Sync refs
   useEffect(() => {
     hasInitialLoadCompletedRef.current = hasInitialLoadCompleted;
   }, [hasInitialLoadCompleted]);
@@ -119,7 +111,7 @@ export default function Template({ children }: Props) {
     pathnameRef.current = pathname;
   }, [pathname]);
 
-  // Smooth percent counter — only relevant during initial load
+  // Smooth percent counter — only during initial load
   useEffect(() => {
     if (hasInitialLoadCompleted) return;
     const obj = { value: animatedPercent };
@@ -135,7 +127,7 @@ export default function Template({ children }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [percentNumber, hasInitialLoadCompleted]);
 
-  // Lenis setup — runs once, never torn down on navigation
+  // Lenis — runs once
   useLayoutEffect(() => {
     ScrollTrigger.normalizeScroll(true);
     const lenis = new Lenis({
@@ -146,7 +138,6 @@ export default function Template({ children }: Props) {
       touchMultiplier: 1.2,
     });
     lenisRef.current = lenis;
-    // Expose for TableOfContents and other consumers
     (window as { __lenis?: Lenis }).__lenis = lenis;
     lenis.on("scroll", ScrollTrigger.update);
     const tick = (time: number) => lenis.raf(time * 700);
@@ -174,15 +165,26 @@ export default function Template({ children }: Props) {
     });
   }, [pathname]);
 
-  // Browser back/forward interception
+  // Back/forward interception
   useEffect(() => {
+    const isAnimatingRef = { current: false };
     const handle = (e: PopStateEvent) => {
       const current = pathnameRef.current;
       const target = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-      if (target === current) return;
+      if (target === current || isAnimatingRef.current) return;
       e.stopImmediatePropagation();
       window.history.pushState(window.history.state, "", current);
-      pageOutLoadingAnimation(target, router, undefined, true);
+      isAnimatingRef.current = true;
+      pageOutInProgressRef.current = true;
+      pageOutLoadingAnimation(
+        target,
+        router,
+        () => {
+          isAnimatingRef.current = false;
+          pageOutInProgressRef.current = false;
+        },
+        true,
+      );
     };
     window.addEventListener("popstate", handle, { capture: true });
     return () =>
@@ -198,13 +200,12 @@ export default function Template({ children }: Props) {
       setIsLoadingComplete(false);
       setAnimatedPercent(0);
     } else {
-      // After initial load: ensure loading overlay stays hidden on new pages
       setAnimatedPercent(0);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
 
-  // Reset progress event (from page-out animation)
+  // Reset progress event
   useEffect(() => {
     const handle = () => {
       if (hasInitialLoadCompletedRef.current) return;
@@ -216,7 +217,7 @@ export default function Template({ children }: Props) {
     return () => window.removeEventListener("resetLoadingProgress", handle);
   }, [setPercentNumber, setIsLoadingComplete]);
 
-  // Track document ready for non-home pages
+  // Track document ready (non-home, first load only)
   useEffect(() => {
     if (pathname === "/" || hasInitialLoadCompleted) return;
     const check = () => {
@@ -240,7 +241,7 @@ export default function Template({ children }: Props) {
     setIsLoadingComplete,
   ]);
 
-  // Loading progress calculation
+  // Loading progress
   useEffect(() => {
     if (hasInitialLoadCompleted) return;
     if (pathname === "/") {
@@ -265,11 +266,25 @@ export default function Template({ children }: Props) {
     setIsLoadingComplete,
   ]);
 
-  // Subsequent navigations — page-in without loading screen
-  // Non-home pages: trigger immediately on pathname change
+  // Page-in: non-home
   useEffect(() => {
     if (!hasInitialLoadCompleted || animationTriggeredRef.current) return;
-    if (pathname === "/") return; // homepage handled separately below
+    if (pathname === "/") return;
+    if (pageOutInProgressRef.current) {
+      const id = setInterval(() => {
+        if (!pageOutInProgressRef.current) {
+          clearInterval(id);
+          animationTriggeredRef.current = true;
+          lenisRef.current?.scrollTo(0, { immediate: true }) ??
+            window.scrollTo(0, 0);
+          pageInWithoutLoadingAnimation(() => {
+            ScrollTrigger.refresh();
+            dispatchPageReady();
+          });
+        }
+      }, 16);
+      return () => clearInterval(id);
+    }
     animationTriggeredRef.current = true;
     lenisRef.current?.scrollTo(0, { immediate: true }) ?? window.scrollTo(0, 0);
     const raf = requestAnimationFrame(() => {
@@ -282,10 +297,10 @@ export default function Template({ children }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
 
-  // Homepage: wait for canvas ready before animating in
+  // Page-in: homepage (waits for canvas)
   useEffect(() => {
     if (!hasInitialLoadCompleted || animationTriggeredRef.current) return;
-    if (pathname !== "/" || !isReady) return;
+    if (pathname !== "/" || !isReady || pageOutInProgressRef.current) return;
     animationTriggeredRef.current = true;
     lenisRef.current?.scrollTo(0, { immediate: true }) ?? window.scrollTo(0, 0);
     const raf = requestAnimationFrame(() => {
@@ -298,7 +313,7 @@ export default function Template({ children }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isReady]);
 
-  // First load — run after loading hits 100%
+  // First load
   useEffect(() => {
     if (
       hasInitialLoadCompleted ||
@@ -306,8 +321,7 @@ export default function Template({ children }: Props) {
       animationTriggeredRef.current
     )
       return;
-    const shouldRun = (pathname === "/" && isReady) || pathname !== "/";
-    if (!shouldRun) return;
+    if (pathname === "/" && !isReady) return;
     const id = setTimeout(() => {
       window.history.scrollRestoration = "manual";
       lenisRef.current?.scrollTo(0, { immediate: true }) ??
@@ -331,7 +345,7 @@ export default function Template({ children }: Props) {
   useEffect(() => {
     console.log(
       "%c⚠️ I see you ⚠️",
-      "font-size: 48px; color: red; font-weight: bold; text-shadow: 1px 1px black, -1px -1px black, 1px -1px black, -1px 1px black;",
+      "font-size: 48px; color: red; font-weight: bold;",
     );
     console.log(
       "%c      ┍--------------------------------------------------┑",
@@ -386,7 +400,7 @@ export default function Template({ children }: Props) {
         >
           <SlotNumber value={animatedPercent} />
           <span
-            className="text-background leading-none font-bold"
+            className="text-background font-bold leading-none"
             style={{ fontSize: "clamp(40px, 9vw, 90px)", lineHeight: 1 }}
           >
             %
