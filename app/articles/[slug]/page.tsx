@@ -83,6 +83,9 @@ export async function generateStaticParams() {
   return (data ?? []).filter((x) => x.slug).map((x) => ({ slug: x.slug }));
 }
 
+// New slugs added after build are rendered on-demand then cached
+export const dynamicParams = true;
+
 function extractHeadings(markdown: string) {
   const lines = markdown.split("\n");
   const headings: { text: string; level: number; id: string }[] = [];

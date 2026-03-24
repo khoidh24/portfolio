@@ -1,5 +1,7 @@
 import { Metadata } from "next";
 
+export const dynamic = "force-static";
+
 import {
   ContactSection,
   HeroSection,

@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useMemo, useEffect } from "react";
+import {
+  useCallback,
+  useMemo,
+  useEffect,
+  useState,
+  useTransition,
+} from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 
 import BlogItem from "./BlogItem";
@@ -9,34 +15,60 @@ import { ArticleData } from "../services/article.type";
 const PAGE_SIZE = 6;
 type SortOrder = "asc" | "desc";
 
+type FilterState = {
+  q: string;
+  tags: string[];
+  sort: SortOrder;
+  page: number;
+};
+
 type Props = { articles: ArticleData[]; isEmpty?: boolean };
 
 export default function ArticlesClient({ articles, isEmpty }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const [isPending, startTransition] = useTransition();
 
-  // Read state from URL
-  const query = searchParams.get("q") ?? "";
-  const activeTags = useMemo(() => searchParams.getAll("tag"), [searchParams]);
-  const sort = (searchParams.get("sort") ?? "asc") as SortOrder;
-  const page = Math.max(1, Number(searchParams.get("page") ?? "1"));
+  // Optimistic local state — updates instantly on interaction
+  const [optimistic, setOptimistic] = useState<FilterState>(() => ({
+    q: searchParams.get("q") ?? "",
+    tags: searchParams.getAll("tag"),
+    sort: (searchParams.get("sort") ?? "asc") as SortOrder,
+    page: Math.max(1, Number(searchParams.get("page") ?? "1")),
+  }));
 
-  // Helper: push new params
+  // Sync optimistic state when URL actually updates (e.g. back/forward)
+  useEffect(() => {
+    setOptimistic({
+      q: searchParams.get("q") ?? "",
+      tags: searchParams.getAll("tag"),
+      sort: (searchParams.get("sort") ?? "asc") as SortOrder,
+      page: Math.max(1, Number(searchParams.get("page") ?? "1")),
+    });
+  }, [searchParams]);
+
   const push = useCallback(
-    (updates: Record<string, string | string[] | null>) => {
-      const params = new URLSearchParams(searchParams.toString());
-      Object.entries(updates).forEach(([key, val]) => {
-        params.delete(key);
-        if (val === null) return;
-        if (Array.isArray(val)) val.forEach((v) => params.append(key, v));
-        else params.set(key, val);
+    (next: Partial<FilterState>) => {
+      const merged: FilterState = { ...optimistic, ...next };
+      // Reset page unless explicitly changing page
+      if (!("page" in next)) merged.page = 1;
+
+      // Update UI immediately
+      setOptimistic(merged);
+
+      // Push URL in background transition
+      const params = new URLSearchParams();
+      if (merged.q) params.set("q", merged.q);
+      merged.tags.forEach((t) => params.append("tag", t));
+      if (merged.sort !== "asc") params.set("sort", merged.sort);
+      if (merged.page > 1) params.set("page", String(merged.page));
+      const qs = params.toString();
+      startTransition(() => {
+        router.push(`${pathname}${qs ? `?${qs}` : ""}`, { scroll: false });
       });
-      // Reset page on filter/sort change (unless explicitly setting page)
-      if (!("page" in updates)) params.set("page", "1");
-      router.push(`${pathname}?${params.toString()}`, { scroll: false });
     },
-    [searchParams, router, pathname],
+    [optimistic, router, pathname],
   );
 
   const allTags = useMemo(() => {
@@ -47,45 +79,42 @@ export default function ArticlesClient({ articles, isEmpty }: Props) {
 
   const filtered = useMemo(() => {
     let result = [...articles];
-    if (query.trim()) {
-      const q = query.toLowerCase();
+    if (optimistic.q.trim()) {
+      const q = optimistic.q.toLowerCase();
       result = result.filter((a) => a.title.toLowerCase().includes(q));
     }
-    if (activeTags.length > 0) {
+    if (optimistic.tags.length > 0) {
       result = result.filter((a) =>
-        activeTags.every((t) => a.tags?.includes(t)),
+        optimistic.tags.some((t) => a.tags?.includes(t)),
       );
     }
     result.sort((a, b) => {
       const cmp = a.title.localeCompare(b.title);
-      return sort === "asc" ? cmp : -cmp;
+      return optimistic.sort === "asc" ? cmp : -cmp;
     });
     return result;
-  }, [articles, query, activeTags, sort]);
+  }, [articles, optimistic.q, optimistic.tags, optimistic.sort]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-
-  // Clamp page if out of range after filter changes
-  useEffect(() => {
-    if (page > totalPages) push({ page: String(totalPages) });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [totalPages]);
+  const currentPage = Math.min(optimistic.page, totalPages);
+  const paginated = filtered.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE,
+  );
 
   const handleTag = useCallback(
     (tag: string) => {
-      const next = activeTags.includes(tag)
-        ? activeTags.filter((t) => t !== tag)
-        : [...activeTags, tag];
-      push({ tag: next.length > 0 ? next : null });
+      const next = optimistic.tags.includes(tag)
+        ? optimistic.tags.filter((t) => t !== tag)
+        : [...optimistic.tags, tag];
+      push({ tags: next });
     },
-    [activeTags, push],
+    [optimistic.tags, push],
   );
 
-  const isFiltered = query.trim() || activeTags.length > 0;
-  const isLastPage = page >= totalPages && filtered.length > 0;
+  const isFiltered = optimistic.q.trim() || optimistic.tags.length > 0;
+  const isLastPage = currentPage >= totalPages && filtered.length > 0;
 
-  // --- Empty DB state ---
   if (isEmpty) {
     return (
       <div className="border-foreground/10 flex flex-col items-start gap-4 border-t py-24">
@@ -102,7 +131,7 @@ export default function ArticlesClient({ articles, isEmpty }: Props) {
 
   return (
     <div className="flex flex-col gap-10">
-      {/* Controls */}
+      {/* Controls — always instant, no pending state */}
       <div className="flex flex-col gap-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
           {/* Search */}
@@ -122,8 +151,8 @@ export default function ArticlesClient({ articles, isEmpty }: Props) {
             </span>
             <input
               type="text"
-              value={query}
-              onChange={(e) => push({ q: e.target.value || null })}
+              value={optimistic.q}
+              onChange={(e) => push({ q: e.target.value })}
               placeholder="Search articles..."
               className="border-foreground/15 bg-foreground/3 text-foreground placeholder:text-foreground/30 focus:border-foreground/40 w-full rounded-none border py-3 pr-4 pl-10 text-sm outline-none transition-colors duration-200"
             />
@@ -134,7 +163,7 @@ export default function ArticlesClient({ articles, isEmpty }: Props) {
             <button
               onClick={() => push({ sort: "asc" })}
               className={`px-4 py-3 text-xs font-semibold tracking-widest uppercase transition-colors duration-200 ${
-                sort === "asc"
+                optimistic.sort === "asc"
                   ? "bg-foreground text-background"
                   : "text-foreground/40 hover:text-foreground"
               }`}
@@ -145,7 +174,7 @@ export default function ArticlesClient({ articles, isEmpty }: Props) {
             <button
               onClick={() => push({ sort: "desc" })}
               className={`px-4 py-3 text-xs font-semibold tracking-widest uppercase transition-colors duration-200 ${
-                sort === "desc"
+                optimistic.sort === "desc"
                   ? "bg-foreground text-background"
                   : "text-foreground/40 hover:text-foreground"
               }`}
@@ -159,7 +188,7 @@ export default function ArticlesClient({ articles, isEmpty }: Props) {
         {allTags.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {allTags.map((tag) => {
-              const active = activeTags.includes(tag);
+              const active = optimistic.tags.includes(tag);
               return (
                 <button
                   key={tag}
@@ -174,9 +203,9 @@ export default function ArticlesClient({ articles, isEmpty }: Props) {
                 </button>
               );
             })}
-            {activeTags.length > 0 && (
+            {optimistic.tags.length > 0 && (
               <button
-                onClick={() => push({ tag: null })}
+                onClick={() => push({ tags: [] })}
                 className="border-foreground/15 text-foreground/30 hover:text-foreground border px-3 py-1.5 text-[10px] font-semibold tracking-[0.2em] uppercase transition-colors duration-200"
               >
                 Clear ×
@@ -190,30 +219,30 @@ export default function ArticlesClient({ articles, isEmpty }: Props) {
       <div className="text-foreground/30 flex items-center justify-between text-xs tracking-widest uppercase">
         <span>
           {filtered.length} article{filtered.length !== 1 ? "s" : ""}
-          {activeTags.length > 0 && ` · ${activeTags.join(", ")}`}
-          {query && ` · "${query}"`}
+          {optimistic.tags.length > 0 && ` · ${optimistic.tags.join(", ")}`}
+          {optimistic.q && ` · "${optimistic.q}"`}
         </span>
         {totalPages > 1 && (
           <span>
-            {page} / {totalPages}
+            {currentPage} / {totalPages}
           </span>
         )}
       </div>
 
-      {/* List */}
-      <div className="flex flex-col">
+      {/* List — dims while URL transition is pending */}
+      <div
+        className={`flex flex-col transition-opacity duration-150 ${isPending ? "opacity-50" : "opacity-100"}`}
+      >
         {paginated.length > 0 ? (
           <>
             {paginated.map((post, idx) => (
               <BlogItem
                 key={post.slug}
                 data={post}
-                index={(page - 1) * PAGE_SIZE + idx}
+                index={(currentPage - 1) * PAGE_SIZE + idx}
               />
             ))}
             <div className="border-foreground/10 border-t" />
-
-            {/* End of results message — always show on last page */}
             {isLastPage && (
               <p className="text-foreground/30 py-10 text-center text-xs tracking-widest uppercase">
                 {isFiltered
@@ -239,8 +268,8 @@ export default function ArticlesClient({ articles, isEmpty }: Props) {
       {totalPages > 1 && (
         <div className="flex items-center justify-center gap-1">
           <button
-            onClick={() => push({ page: String(page - 1) })}
-            disabled={page === 1}
+            onClick={() => push({ page: currentPage - 1 })}
+            disabled={currentPage === 1}
             className="border-foreground/15 text-foreground/40 hover:border-foreground/40 hover:text-foreground disabled:opacity-20 border px-4 py-2.5 text-xs font-semibold tracking-widest uppercase transition-colors duration-200 disabled:cursor-not-allowed"
           >
             ← Prev
@@ -248,9 +277,9 @@ export default function ArticlesClient({ articles, isEmpty }: Props) {
           {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
             <button
               key={p}
-              onClick={() => push({ page: String(p) })}
+              onClick={() => push({ page: p })}
               className={`border px-4 py-2.5 text-xs font-semibold tracking-widest uppercase transition-colors duration-200 ${
-                p === page
+                p === currentPage
                   ? "border-foreground bg-foreground text-background"
                   : "border-foreground/15 text-foreground/40 hover:border-foreground/40 hover:text-foreground"
               }`}
@@ -259,8 +288,8 @@ export default function ArticlesClient({ articles, isEmpty }: Props) {
             </button>
           ))}
           <button
-            onClick={() => push({ page: String(page + 1) })}
-            disabled={page === totalPages}
+            onClick={() => push({ page: currentPage + 1 })}
+            disabled={currentPage === totalPages}
             className="border-foreground/15 text-foreground/40 hover:border-foreground/40 hover:text-foreground disabled:opacity-20 border px-4 py-2.5 text-xs font-semibold tracking-widest uppercase transition-colors duration-200 disabled:cursor-not-allowed"
           >
             Next →

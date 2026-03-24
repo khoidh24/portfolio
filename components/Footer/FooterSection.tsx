@@ -1,11 +1,11 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useEffect } from "react";
 
+import VolunoteWordmark from "./VolunoteWordmark";
 import { usePageReady } from "@/hooks/usePageReady";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
-import { ScrollTrigger } from "gsap/ScrollTrigger";
 
 const NAV_GROUPS = [
   {
@@ -39,95 +39,95 @@ export default function FooterSection() {
   const containerRef = useRef<HTMLDivElement>(null);
   const animatedRef = useRef(false);
 
+  // Set initial hidden state as soon as isPageReady — before IO fires
   useGSAP(
     () => {
       if (!isPageReady) {
         animatedRef.current = false;
         return;
       }
-      if (animatedRef.current) return;
-      animatedRef.current = true;
-
-      const container = containerRef.current;
-      if (!container) return;
-
-      gsap.set(".footer__letter", { yPercent: 110 });
-      gsap.set(".footer__meta", { opacity: 0, y: 16 });
-
-      // Check if footer is already in viewport — if so, play immediately
-      const rect = container.getBoundingClientRect();
-      const alreadyVisible = rect.top < window.innerHeight;
-
-      const animate = () => {
-        gsap.to(".footer__letter", {
-          yPercent: 0,
-          duration: 1,
-          ease: "power4.out",
-          stagger: 0.035,
-        });
-        gsap.to(".footer__meta", {
-          opacity: 1,
-          y: 0,
-          duration: 0.7,
-          ease: "power3.out",
-          stagger: 0.07,
-          delay: 0.2,
-        });
-      };
-
-      if (alreadyVisible) {
-        animate();
-      } else {
-        ScrollTrigger.create({
-          trigger: container,
-          start: "top 95%",
-          invalidateOnRefresh: true,
-          onEnter: animate,
-        });
-        requestAnimationFrame(() => ScrollTrigger.refresh());
-      }
+      gsap.set(".footer__wordmark", { yPercent: -100 });
+      gsap.set(".footer__meta", { opacity: 0, y: 12 });
     },
     { dependencies: [isPageReady], scope: containerRef },
   );
 
+  // IntersectionObserver — fires as soon as footer enters viewport, no scroll dependency
+  useEffect(() => {
+    if (!isPageReady) return;
+
+    const container = containerRef.current;
+    if (!container) return;
+
+    const animate = () => {
+      if (animatedRef.current) return;
+      animatedRef.current = true;
+      gsap.to(".footer__wordmark", {
+        yPercent: 0,
+        duration: 0.8,
+        ease: "power4.out",
+      });
+      gsap.to(".footer__meta", {
+        opacity: 1,
+        y: 0,
+        duration: 0.7,
+        ease: "power3.out",
+        stagger: 0.06,
+        delay: 0.3,
+      });
+    };
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          animate();
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.01 },
+    );
+
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [isPageReady]);
+
   return (
     <div
       ref={containerRef}
-      className="bg-foreground relative w-full overflow-hidden px-4 pt-14 pb-8 md:px-10 md:pt-20"
+      className="bg-foreground relative w-full overflow-hidden"
     >
-      <div className="mx-auto max-w-7xl">
-        <div className="mb-8 overflow-hidden md:mb-12">
-          <p
-            aria-label="Volunote"
-            className="flex font-sans leading-none font-bold tracking-tighter whitespace-nowrap"
-            style={{
-              fontSize: "clamp(40px, 12vw, 200px)",
-              WebkitTextStroke: "1.5px var(--background)",
-              color: "transparent",
-            }}
-          >
-            {"VOLUNOTE".split("").map((char, i) => (
-              <span key={i} className="footer__letter inline-block">
-                {char}
-              </span>
-            ))}
-          </p>
-        </div>
+      {/* VOLUNOTE wordmark — flush to top, full width */}
+      <div className="w-full overflow-hidden">
+        <VolunoteWordmark
+          aria-label="Volunote"
+          fill="none"
+          style={{
+            stroke: "var(--background)",
+            strokeWidth: "0.18",
+            opacity: 1,
+          }}
+          width="100%"
+          height="100%"
+          className="footer__wordmark block w-full"
+          preserveAspectRatio="xMidYMid meet"
+        />
+      </div>
 
-        <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
-          <p className="footer__meta text-background/50 max-w-[320px] text-sm leading-relaxed">
+      {/* Meta content */}
+      <div className="border-background/10 mx-auto max-w-7xl px-4 pb-8 pt-6 md:pt-12 md:px-10">
+        <div className="grid grid-cols-1 gap-8 md:grid-cols-[1fr_auto]">
+          {/* Left — tagline */}
+          <p className="footer__meta text-background/40 text-xs leading-relaxed tracking-wide">
             Crafting interfaces where arts & logic meet.
             <br />
             Ho Chi Minh City, Vietnam.
           </p>
 
-          <nav className="flex flex-wrap gap-x-12 gap-y-6">
+          {/* Right — nav groups */}
+          <nav className="footer__meta flex flex-wrap gap-x-10 gap-y-6">
             {NAV_GROUPS.map((group) => (
-              <div
-                key={group.heading}
-                className="footer__meta flex flex-col gap-2"
-              >
-                <span className="text-background/30 mb-1 text-xs font-medium tracking-widest uppercase">
+              <div key={group.heading} className="flex flex-col gap-1.5">
+                <span className="text-background/25 mb-1 text-[10px] font-semibold tracking-[0.2em] uppercase">
                   {group.heading}
                 </span>
                 {group.links.map((link) => (
@@ -145,7 +145,7 @@ export default function FooterSection() {
                         ? "noopener noreferrer"
                         : undefined
                     }
-                    className="group text-background/60 hover:text-background relative w-fit text-sm font-medium transition-colors duration-200"
+                    className="group text-background/50 hover:text-background relative w-fit text-xs font-medium transition-colors duration-200"
                   >
                     {link.label}
                     <span className="bg-background absolute -bottom-px left-0 h-px w-0 transition-all duration-300 group-hover:w-full" />
@@ -156,11 +156,15 @@ export default function FooterSection() {
           </nav>
         </div>
 
-        <div className="footer__meta border-background/10 mt-10 flex items-center justify-between border-t pt-6">
-          <span className="text-background/30 text-xs" suppressHydrationWarning>
+        {/* Bottom bar */}
+        <div className="footer__meta border-background/10 mt-8 flex items-center justify-between border-t pt-5">
+          <span
+            className="text-background/25 text-[10px] tracking-wide"
+            suppressHydrationWarning
+          >
             © {new Date().getFullYear()} Volunote. All rights reserved.
           </span>
-          <span className="text-background/30 text-xs">
+          <span className="text-background/25 text-[10px] tracking-wide">
             Built with Next.js & Lenis
           </span>
         </div>

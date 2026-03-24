@@ -6,7 +6,7 @@ import Link from "next/link";
 import ContactForm from "./components/ContactForm";
 import { CONTACT_INFORMATION } from "./services/pageContent";
 
-export const revalidate = 604800;
+export const dynamic = "force-static";
 
 export const metadata: Metadata = {
   title: "Get in Touch | Volunote - Zen Software Engineer",
