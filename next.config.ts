@@ -50,6 +50,15 @@ const nextConfig: NextConfig = {
         ],
       },
       {
+        source: "/frame-decoder.worker.js",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=63072000, immutable",
+          },
+        ],
+      },
+      {
         source: "/og-image.jpg",
         headers: [
           {

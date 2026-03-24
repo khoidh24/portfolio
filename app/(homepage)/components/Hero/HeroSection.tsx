@@ -8,7 +8,6 @@ import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 
 const BATCH_SIZE = 8;
-const WORKER_COUNT = 4;
 
 const getIsMobile = () =>
   typeof window !== "undefined" && window.innerWidth < 768;
@@ -35,92 +34,35 @@ export default function HeroSection() {
   const initializedRef = useRef(false);
   const mountedRef = useRef(false);
   const isMobileRef = useRef(false);
-  const workersRef = useRef<Worker[]>([]);
-  const decodeQueueRef = useRef<number[]>([]);
+  // Track in-progress createImageBitmap calls to avoid duplicates
   const decodingRef = useRef<Set<number>>(new Set());
-  const lastEnqueueFrameRef = useRef(-1);
 
   const setImages = useLoadImageStore((s) => s.setImages);
   const images = useLoadImageStore((s) => s.images);
   const setIsReady = useLoadImageStore((s) => s.setIsReady);
   const setLoadedImageCount = useLoadImageStore((s) => s.setLoadedImageCount);
 
-  // ── Worker pool (desktop only) ───────────────────────────────────────────
-  const drainQueue = useCallback(() => {
-    const queue = decodeQueueRef.current;
-    const decoding = decodingRef.current;
-    const workers = workersRef.current;
+  // ── Bitmap decode (desktop only) ────────────────────────────────────────
+  // createImageBitmap is async and runs off the main thread in modern browsers.
+  // No worker needed — avoids double-fetching frames that <img> already loaded.
+  const decodeBitmap = useCallback((index: number, img: HTMLImageElement) => {
+    if (isMobileRef.current) return;
     const bitmaps = bitmapsRef.current;
-    if (!workers.length) return;
-
-    let wi = 0;
-    while (queue.length > 0 && decoding.size < workers.length) {
-      const idx = queue.shift()!;
-      if (bitmaps[idx] !== null || decoding.has(idx)) continue;
-      decoding.add(idx);
-      workers[wi % workers.length].postMessage({
-        index: idx,
-        src: currentFrame(idx),
-      });
-      wi++;
-    }
+    const decoding = decodingRef.current;
+    if (bitmaps[index] != null || decoding.has(index)) return;
+    decoding.add(index);
+    createImageBitmap(img)
+      .then((bitmap) => {
+        decoding.delete(index);
+        if (!mountedRef.current) {
+          bitmap.close();
+          return;
+        }
+        bitmaps[index] = bitmap;
+        if (videoFrameRef.current.frame === index) scheduleRender();
+      })
+      .catch(() => decoding.delete(index));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const initWorkers = useCallback(() => {
-    if (typeof Worker === "undefined" || isMobileRef.current) return;
-    workersRef.current = Array.from({ length: WORKER_COUNT }, () => {
-      const w = new Worker("/frame-decoder.worker.js");
-      w.onmessage = (e) => {
-        const { index, bitmap, error } = e.data as {
-          index: number;
-          bitmap?: ImageBitmap;
-          error?: boolean;
-        };
-        decodingRef.current.delete(index);
-        if (!error && bitmap && mountedRef.current) {
-          bitmapsRef.current[index] = bitmap;
-          if (videoFrameRef.current.frame === index) scheduleRender();
-        }
-        drainQueue();
-      };
-      return w;
-    });
-  }, [drainQueue]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const enqueueAround = useCallback(
-    (center: number, radius = 20) => {
-      if (isMobileRef.current) return;
-      if (Math.abs(center - lastEnqueueFrameRef.current) < 3) return;
-      lastEnqueueFrameRef.current = center;
-
-      const queue = decodeQueueRef.current;
-      const bitmaps = bitmapsRef.current;
-      const decoding = decodingRef.current;
-      // Use a Set for O(1) lookup instead of array.includes O(n)
-      const queued = new Set(queue);
-      const toAdd: number[] = [];
-
-      for (let d = 0; d <= radius; d++) {
-        const candidates = d === 0 ? [center] : [center + d, center - d];
-        for (const i of candidates) {
-          if (i < 0 || i >= TOTAL_FRAMES) continue;
-          if (bitmaps[i] != null || decoding.has(i) || queued.has(i)) continue;
-          toAdd.push(i);
-          queued.add(i);
-        }
-      }
-      decodeQueueRef.current = [...toAdd, ...queue];
-      drainQueue();
-    },
-    [drainQueue],
-  );
-
-  const terminateWorkers = useCallback(() => {
-    workersRef.current.forEach((w) => w.terminate());
-    workersRef.current = [];
-    decodeQueueRef.current = [];
-    decodingRef.current.clear();
-  }, []);
 
   // ── Render ───────────────────────────────────────────────────────────────
   // Mobile: swap <img> src — browser handles decode/cache, zero GPU overhead
@@ -239,7 +181,7 @@ export default function HeroSection() {
       end: `+=${h * 4.5}px`,
       pin: true,
       pinSpacing: true,
-      scrub: mobile ? true : 0.5,
+      scrub: mobile ? 1 : 0.5,
       onUpdate: (self) => {
         const progress = self.progress;
 
@@ -248,7 +190,6 @@ export default function HeroSection() {
         if (videoFrameRef.current.frame !== targetFrame) {
           videoFrameRef.current.frame = targetFrame;
           scheduleRender();
-          if (!mobile) enqueueAround(targetFrame, 30);
         }
 
         const navZone = progress <= 0.1 ? 0 : progress >= 0.85 ? 2 : 1;
@@ -336,7 +277,7 @@ export default function HeroSection() {
         last.wrapperZone = wrapperZone;
       },
     });
-  }, [scheduleRender, enqueueAround]);
+  }, [scheduleRender]);
 
   // ── Mount / init ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -385,19 +326,39 @@ export default function HeroSection() {
           if (!mountedRef.current) return;
           setIsReady(true);
           ScrollTrigger.refresh();
-          if (!mobile) {
-            initWorkers();
-            enqueueAround(0, 40);
-          }
         });
       });
     };
 
     if (images.length > 0) {
       finishSetup(images);
+      // Decode bitmaps for cached images (desktop only)
+      if (!mobile) {
+        images.forEach((img, i) => {
+          if (img.complete && img.naturalWidth > 0) decodeBitmap(i, img);
+        });
+      }
     } else {
       const newImages: HTMLImageElement[] = new Array(TOTAL_FRAMES);
       let imagesLoaded = 0;
+
+      const onLoad = (img: HTMLImageElement, i: number) => {
+        imagesLoaded++;
+        if (imagesLoaded % 16 === 0 || imagesLoaded === TOTAL_FRAMES) {
+          if (mountedRef.current) setLoadedImageCount(imagesLoaded);
+        }
+        // Decode to ImageBitmap immediately after img loads — no double fetch
+        if (!mobile) decodeBitmap(i, img);
+
+        if (imagesLoaded === TOTAL_FRAMES) {
+          if (mountedRef.current) {
+            setImages(newImages);
+            finishSetup(newImages);
+          }
+          return;
+        }
+        if (imagesLoaded % BATCH_SIZE === 0) loadBatch(imagesLoaded);
+      };
 
       const loadBatch = (startIdx: number) => {
         if (startIdx >= TOTAL_FRAMES) return;
@@ -406,27 +367,21 @@ export default function HeroSection() {
           const img = new Image();
           img.decoding = "async";
           newImages[i] = img;
-          img.onload = img.onerror = () => {
-            imagesLoaded++;
-            if (imagesLoaded % 16 === 0 || imagesLoaded === TOTAL_FRAMES) {
-              if (mountedRef.current) setLoadedImageCount(imagesLoaded);
-            }
-            if (imagesLoaded === TOTAL_FRAMES) {
-              if (mountedRef.current) {
-                setImages(newImages);
-                finishSetup(newImages);
-              }
-              return;
-            }
-            if (imagesLoaded % BATCH_SIZE === 0) loadBatch(imagesLoaded);
-          };
+          img.onload = () => onLoad(img, i);
+          img.onerror = () => onLoad(img, i);
           img.src = currentFrame(i);
         }
       };
 
+      // Start more batches upfront for faster initial load
       loadBatch(0);
       loadBatch(BATCH_SIZE);
-      if (!mobile) loadBatch(BATCH_SIZE * 2);
+      loadBatch(BATCH_SIZE * 2);
+      loadBatch(BATCH_SIZE * 3);
+      if (!mobile) {
+        loadBatch(BATCH_SIZE * 4);
+        loadBatch(BATCH_SIZE * 5);
+      }
     }
 
     window.addEventListener("resize", handleResize);
@@ -435,9 +390,9 @@ export default function HeroSection() {
       window.removeEventListener("resize", handleResize);
       if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
-      terminateWorkers();
       bitmapsRef.current.forEach((bmp) => bmp?.close());
       bitmapsRef.current = new Array(TOTAL_FRAMES).fill(null);
+      decodingRef.current.clear();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

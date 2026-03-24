@@ -127,22 +127,27 @@ export default function Template({ children }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [percentNumber, hasInitialLoadCompleted]);
 
-  // Lenis — runs once
+  // Lenis — desktop only, mobile uses native scroll
   useLayoutEffect(() => {
+    const isMobile = window.innerWidth < 768;
+
+    // normalizeScroll keeps address bar hidden on mobile — always enable
     ScrollTrigger.normalizeScroll(true);
+
+    if (isMobile) return;
+
     const lenis = new Lenis({
       duration: 0.6,
       easing: (t) => 1 - Math.pow(1 - t, 2.5),
       smoothWheel: true,
       wheelMultiplier: 1.2,
-      touchMultiplier: 1.2,
     });
     lenisRef.current = lenis;
     (window as { __lenis?: Lenis }).__lenis = lenis;
     lenis.on("scroll", ScrollTrigger.update);
-    const tick = (time: number) => lenis.raf(time * 700);
+    const tick = (time: number) => lenis.raf(time * 1000);
     gsap.ticker.add(tick);
-    gsap.ticker.lagSmoothing(0);
+    gsap.ticker.lagSmoothing(500, 33);
     return () => {
       gsap.ticker.remove(tick);
       lenis.destroy();
