@@ -221,7 +221,11 @@ export default function Template({ children }: Props) {
   useEffect(() => {
     if (pathname === "/") return;
     const check = () => {
-      if (document.readyState === "complete") isDocumentReadyRef.current = true;
+      if (document.readyState === "complete") {
+        isDocumentReadyRef.current = true;
+        setPercentNumber(100);
+        setIsLoadingComplete(true);
+      }
     };
     check();
     window.addEventListener("load", check);
@@ -230,7 +234,7 @@ export default function Template({ children }: Props) {
       window.removeEventListener("load", check);
       document.removeEventListener("readystatechange", check);
     };
-  }, [pathname]);
+  }, [pathname, setPercentNumber, setIsLoadingComplete]);
 
   // Loading progress calculation
   useEffect(() => {
