@@ -206,7 +206,7 @@ export default function ArticlesClient({ articles, isEmpty }: Props) {
             {optimistic.tags.length > 0 && (
               <button
                 onClick={() => push({ tags: [] })}
-                className="border-foreground/15 text-foreground/30 hover:text-foreground border px-3 py-1.5 text-[10px] font-semibold tracking-[0.2em] uppercase transition-colors duration-200"
+                className="border-red-500/60 text-red-500/70 hover:border-red-500 hover:text-red-500 border px-3 py-1.5 text-[10px] font-semibold tracking-[0.2em] uppercase transition-colors duration-200"
               >
                 Clear ×
               </button>
