@@ -137,6 +137,40 @@
   transform: translate(-50%, -50%) translateZ(var(--hero-z, 0px));
 }
 
+/* Scroll indicator animations */
+.hero__scroll-indicator {
+  animation: mouse-bounce 2s ease-in-out infinite;
+}
+
+.scroll-wheel {
+  animation: scroll-wheel 1.5s ease-in-out infinite;
+}
+
+@keyframes mouse-bounce {
+  0%,
+  100% {
+    transform: translate(-50%, 0);
+  }
+  50% {
+    transform: translate(-50%, 12px);
+  }
+}
+
+@keyframes scroll-wheel {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 0.3;
+    transform: translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @media (hover: hover) {
   .journey__row {
     transition: background-color 0.3s;

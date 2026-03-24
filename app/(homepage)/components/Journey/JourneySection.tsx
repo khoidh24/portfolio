@@ -212,7 +212,7 @@ export default function JourneySection() {
   return (
     <div
       ref={containerRef}
-      className="journey__container container mx-auto w-full px-4 py-16 md:px-10 md:py-24 2xl:py-32"
+      className="journey__container container mx-auto w-full px-4 py-16 md:px-0 md:py-24 2xl:py-32"
     >
       {mounted &&
         !isMobile.current &&

@@ -64,12 +64,18 @@ export default function HeroSection() {
     const navContainer = document.querySelector<HTMLElement>(".nav__container");
     const heroHeader = document.querySelector<HTMLElement>(".hero__header");
     const heroWrapper = document.querySelector<HTMLElement>(".hero__wrapper");
+    const scrollIndicator = document.querySelector<HTMLElement>(
+      ".hero__scroll-indicator",
+    );
 
     const setNavOpacity = navEls.length
       ? gsap.quickSetter(navEls, "opacity")
       : null;
     const setHeaderOpacity = heroHeader
       ? gsap.quickSetter(heroHeader, "opacity")
+      : null;
+    const setScrollIndicatorOpacity = scrollIndicator
+      ? gsap.quickSetter(scrollIndicator, "opacity")
       : null;
     const setHeaderZ = heroHeader
       ? (v: number) => heroHeader.style.setProperty("--hero-z", `${v}px`)
@@ -142,13 +148,16 @@ export default function HeroSection() {
         }
         lastZone = zone;
 
-        // Header
+        // Header + scroll indicator
         const headerVisible = p <= 0.25 ? 1 : 0;
         if (headerVisible) {
           setHeaderZ?.((p / 0.25) * -500);
-          setHeaderOpacity?.(p >= 0.2 ? 1 - (p - 0.2) / 0.05 : 1);
+          const opacity = p >= 0.2 ? 1 - (p - 0.2) / 0.05 : 1;
+          setHeaderOpacity?.(opacity);
+          setScrollIndicatorOpacity?.(opacity);
         } else if (lastHeaderVisible !== 0) {
           setHeaderOpacity?.(0);
+          setScrollIndicatorOpacity?.(0);
         }
         lastHeaderVisible = headerVisible;
 
@@ -309,7 +318,7 @@ export default function HeroSection() {
         />
       </div>
       <div className="hero__content absolute top-2/5 left-1/2 -translate-x-1/2 py-2 perspective-distant transform-3d">
-        <div className="hero__header text-background absolute top-1/2 left-1/2 flex w-screen origin-center -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-4 text-center will-change-[transform,opacity]">
+        <div className="hero__header text-background absolute top-1/2 left-1/2 flex w-screen origin-center flex-col items-center gap-4 text-center will-change-[transform,opacity]">
           <h1 className="font-sans text-2xl font-bold tracking-normal xl:text-4xl cursor-default">
             Your results reflect{" "}
             <span className="inline max-xl:inline-block">
@@ -320,6 +329,12 @@ export default function HeroSection() {
             An interface is not just something to look at
             <span className="block">but an experience to feel.</span>
           </p>
+        </div>
+      </div>
+      {/* Scroll indicator mouse */}
+      <div className="hero__scroll-indicator text-background absolute bottom-32 left-1/2 -translate-x-1/2 will-change-[transform,opacity]">
+        <div className="relative flex h-12 w-7 items-start justify-center rounded-full border-2 border-current p-1.5">
+          <div className="scroll-wheel h-2 w-1.5 rounded-full bg-current" />
         </div>
       </div>
     </section>

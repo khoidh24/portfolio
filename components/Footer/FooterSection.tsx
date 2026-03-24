@@ -47,7 +47,8 @@ export default function FooterSection() {
     const container = containerRef.current;
     if (!container) return;
 
-    gsap.set(".footer__wordmark", { yPercent: -100 });
+    // Start wordmark from bottom of viewport
+    gsap.set(".footer__wordmark", { y: -window.innerHeight });
     gsap.set(".footer__meta", { opacity: 0, y: 12 });
 
     const observer = new IntersectionObserver(
@@ -56,8 +57,8 @@ export default function FooterSection() {
         animatedRef.current = true;
         observer.disconnect();
         gsap.to(".footer__wordmark", {
-          yPercent: 0,
-          duration: 1,
+          y: 0,
+          duration: 1.2,
           ease: "power4.out",
         });
         gsap.to(".footer__meta", {
@@ -80,7 +81,7 @@ export default function FooterSection() {
       ref={containerRef}
       className="bg-foreground relative w-full overflow-hidden"
     >
-      {/* VOLUNOTE wordmark — flush to top, full width */}
+      {/* VOLUNOTE wordmark — 24px from top */}
       <div className="w-full overflow-hidden">
         <VolunoteWordmark
           aria-label="Volunote"

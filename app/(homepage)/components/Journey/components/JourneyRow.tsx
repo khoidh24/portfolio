@@ -14,7 +14,7 @@ export default function JourneyRow({ item, idx }: Props) {
     >
       <div className="journey__line h-px w-full bg-neutral-300" />
 
-      <div className="py-5 md:py-8">
+      <div className="md:px-4 py-5 md:py-8">
         <div className="flex items-start gap-4">
           <div className="journey__index shrink-0">
             <span className="inline-block text-[clamp(32px,4vw,56px)] leading-none font-bold text-neutral-200 select-none">
@@ -38,7 +38,7 @@ export default function JourneyRow({ item, idx }: Props) {
             </div>
 
             <div className="mt-3 flex flex-col gap-2 md:mt-4 md:gap-3">
-              <p className="journey__content max-w-[560px] text-sm leading-relaxed text-neutral-500">
+              <p className="journey__content max-w-[600px] text-sm leading-relaxed text-neutral-500">
                 {item.description}
               </p>
               <div className="flex flex-wrap gap-2">
