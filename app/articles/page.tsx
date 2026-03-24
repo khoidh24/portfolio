@@ -1,8 +1,9 @@
 import { supabase } from "@/lib/supabaseClient";
 import { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { Suspense } from "react";
 
-import BlogItem from "./components/BlogItem";
+import { ArticleData } from "./services/article.type";
+import ArticlesClient from "./components/ArticlesClient";
 
 export const revalidate = 86400;
 
@@ -34,11 +35,31 @@ export const metadata: Metadata = {
 export default async function BlogPage() {
   const { data, error } = await supabase
     .from("articles")
-    .select("title, created_at, thumbnail_url, author, slug, summary")
+    .select(
+      "title, created_at, thumbnail_url, author, slug, summary, article_tags(tags(tag_name))",
+    )
     .order("pin", { ascending: false })
     .order("created_at", { ascending: true });
 
-  if (!data || error) notFound();
+  const isEmpty = !!error || !data || data.length === 0;
+
+  const articles: ArticleData[] = isEmpty
+    ? []
+    : data.map((row) => ({
+        title: row.title,
+        created_at: row.created_at,
+        thumbnail_url: row.thumbnail_url,
+        author: row.author,
+        slug: row.slug,
+        summary: row.summary,
+        tags: (
+          row.article_tags as unknown as {
+            tags: { tag_name: string } | null;
+          }[]
+        )
+          ?.map((at) => at.tags?.tag_name)
+          .filter((t): t is string => Boolean(t)),
+      }));
 
   return (
     <div className="container mx-auto w-full px-4 pt-24 pb-24 md:px-10 md:pt-32 2xl:pt-40">
@@ -53,12 +74,9 @@ export default async function BlogPage() {
         </h1>
       </div>
 
-      <div className="flex flex-col">
-        {data.map((post, idx) => (
-          <BlogItem key={post.slug} data={post} index={idx} />
-        ))}
-        <div className="border-foreground/10 border-t" />
-      </div>
+      <Suspense>
+        <ArticlesClient articles={articles} isEmpty={isEmpty} />
+      </Suspense>
     </div>
   );
 }

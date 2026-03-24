@@ -133,7 +133,7 @@ export default async function BlogDetailPage({
         />
       </div>
 
-      <section className="relative mx-auto w-full max-w-[1400px] px-4 pt-12 pb-24 md:px-10 xl:pt-16 xl:pb-32">
+      <section className="relative mx-auto w-full max-w-[1400px] overflow-visible px-4 pt-12 pb-24 md:px-10 xl:pt-16 xl:pb-32">
         {/* Article header */}
         <div className="mx-auto mb-10 max-w-3xl xl:mb-14">
           <h1 className="mb-6 text-[clamp(24px,4vw,52px)] leading-[1.1] font-bold tracking-tight">

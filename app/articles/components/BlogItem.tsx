@@ -53,6 +53,19 @@ export default function BlogItem({ data, index }: Props) {
                 {data.summary}
               </p>
             )}
+
+            {data.tags && data.tags.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {data.tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="border-foreground/15 text-foreground/40 border px-2 py-0.5 text-[9px] font-semibold tracking-[0.18em] uppercase"
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
 
           <span className="text-foreground/30 group-hover:text-foreground w-fit font-sans text-xs font-semibold tracking-widest uppercase transition-colors duration-200">

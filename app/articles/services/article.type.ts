@@ -6,4 +6,5 @@ export type ArticleData = {
   content?: string;
   slug?: string;
   summary?: string;
+  tags?: string[];
 };

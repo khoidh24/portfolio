@@ -5,6 +5,7 @@ import { useRef } from "react";
 import { usePageReady } from "@/hooks/usePageReady";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
 
 const NAV_GROUPS = [
   {
@@ -40,34 +41,51 @@ export default function FooterSection() {
 
   useGSAP(
     () => {
-      if (!isPageReady || animatedRef.current) return;
+      if (!isPageReady) {
+        animatedRef.current = false;
+        return;
+      }
+      if (animatedRef.current) return;
       animatedRef.current = true;
 
-      const st = {
-        trigger: containerRef.current,
-        start: "top 90%",
-        toggleActions: "play none none none",
-      };
+      const container = containerRef.current;
+      if (!container) return;
 
       gsap.set(".footer__letter", { yPercent: 110 });
       gsap.set(".footer__meta", { opacity: 0, y: 16 });
 
-      gsap.to(".footer__letter", {
-        yPercent: 0,
-        duration: 1,
-        ease: "power4.out",
-        stagger: 0.035,
-        scrollTrigger: st,
-      });
-      gsap.to(".footer__meta", {
-        opacity: 1,
-        y: 0,
-        duration: 0.7,
-        ease: "power3.out",
-        stagger: 0.07,
-        delay: 0.2,
-        scrollTrigger: st,
-      });
+      // Check if footer is already in viewport — if so, play immediately
+      const rect = container.getBoundingClientRect();
+      const alreadyVisible = rect.top < window.innerHeight;
+
+      const animate = () => {
+        gsap.to(".footer__letter", {
+          yPercent: 0,
+          duration: 1,
+          ease: "power4.out",
+          stagger: 0.035,
+        });
+        gsap.to(".footer__meta", {
+          opacity: 1,
+          y: 0,
+          duration: 0.7,
+          ease: "power3.out",
+          stagger: 0.07,
+          delay: 0.2,
+        });
+      };
+
+      if (alreadyVisible) {
+        animate();
+      } else {
+        ScrollTrigger.create({
+          trigger: container,
+          start: "top 95%",
+          invalidateOnRefresh: true,
+          onEnter: animate,
+        });
+        requestAnimationFrame(() => ScrollTrigger.refresh());
+      }
     },
     { dependencies: [isPageReady], scope: containerRef },
   );
