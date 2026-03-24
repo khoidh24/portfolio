@@ -127,3 +127,13 @@
   opacity: 0 !important;
   pointer-events: none !important;
 }
+
+/* Journey row hover — only on devices that support hover */
+@media (hover: hover) {
+  .journey__row {
+    transition: background-color 0.3s;
+  }
+  .journey__row:hover {
+    background-color: color-mix(in srgb, var(--foreground) 3%, transparent);
+  }
+}

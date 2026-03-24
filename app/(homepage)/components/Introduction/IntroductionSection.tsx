@@ -63,49 +63,49 @@ export default function IntroductionSection() {
       gsap.to(".intro__eyebrow", {
         yPercent: 0,
         opacity: 1,
-        duration: 0.5,
+        duration: 0.35,
         ease: "power3.out",
         scrollTrigger: st,
       });
       gsap.to(".intro__word", {
         yPercent: 0,
-        duration: 0.7,
+        duration: 0.45,
         ease: "power4.out",
-        stagger: 0.05,
+        stagger: 0.04,
         scrollTrigger: st,
       });
       gsap.to(".intro__divider", {
         scaleX: 1,
-        duration: 0.7,
+        duration: 0.45,
         ease: "power3.inOut",
-        delay: 0.15,
+        delay: 0.1,
         scrollTrigger: st,
       });
       gsap.to(".intro__body", {
         opacity: 1,
         y: 0,
-        duration: 0.6,
+        duration: 0.4,
         ease: "power3.out",
-        delay: 0.2,
+        delay: 0.15,
         scrollTrigger: st,
       });
       gsap.to(".intro__stat", {
         opacity: 1,
         scale: 1,
         y: 0,
-        duration: 0.45,
+        duration: 0.3,
         ease: "back.out(1.7)",
-        stagger: 0.08,
-        delay: 0.2,
+        stagger: 0.06,
+        delay: 0.15,
         scrollTrigger: st,
       });
       gsap.to(".intro__info-item", {
         opacity: 1,
         x: 0,
-        duration: 0.4,
+        duration: 0.3,
         ease: "power3.out",
-        stagger: 0.05,
-        delay: 0.3,
+        stagger: 0.04,
+        delay: 0.2,
         scrollTrigger: {
           trigger: containerRef.current,
           start: "top 55%",
@@ -115,17 +115,17 @@ export default function IntroductionSection() {
       gsap.to(".intro__image", {
         scale: 1,
         opacity: 1,
-        duration: 0.9,
+        duration: 0.6,
         ease: "power4.out",
-        delay: 0.15,
+        delay: 0.1,
         scrollTrigger: st,
       });
       gsap.to(".intro__image-label", {
         opacity: 1,
         y: 0,
-        duration: 0.5,
+        duration: 0.35,
         ease: "power3.out",
-        delay: 0.4,
+        delay: 0.25,
         scrollTrigger: st,
       });
     },
@@ -207,12 +207,13 @@ export default function IntroductionSection() {
               </div>
               <div className="overflow-hidden">
                 <Image
-                  src="/motion/signature-creature.webp"
+                  src="/signature-creature.webp"
                   width={500}
                   height={500}
                   alt="Volunote — A Joyful Software Engineer"
                   title="Volunote — A Joyful Software Engineer"
                   className="intro__image w-full object-cover"
+                  sizes="(max-width: 768px) 100vw, 420px"
                   loading="lazy"
                 />
               </div>

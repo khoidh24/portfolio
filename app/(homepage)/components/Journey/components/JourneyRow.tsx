@@ -8,7 +8,7 @@ type Props = {
 export default function JourneyRow({ item, idx }: Props) {
   return (
     <div
-      className="journey__row hover:bg-foreground/3 cursor-default transition-colors duration-300"
+      className="journey__row cursor-default"
       data-image={item.image}
       data-idx={idx}
     >

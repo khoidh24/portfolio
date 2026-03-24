@@ -64,7 +64,7 @@ export default function FooterSection() {
       animatedRef.current = true;
       gsap.to(".footer__wordmark", {
         yPercent: 0,
-        duration: 1.2,
+        duration: 1,
         ease: "power4.out",
       });
       gsap.to(".footer__meta", {

@@ -35,38 +35,41 @@ export default function ContactSection() {
       gsap.to(".contact__label", {
         yPercent: 0,
         opacity: 1,
-        duration: 0.5,
+        duration: 0.35,
         ease: "power3.out",
         scrollTrigger: st,
       });
       gsap.to(".contact__word", {
         yPercent: 0,
-        duration: 0.7,
+        duration: 0.45,
         ease: "power4.out",
-        stagger: 0.06,
+        stagger: 0.04,
         scrollTrigger: st,
       });
       gsap.to(".contact__sub", {
         opacity: 1,
         y: 0,
-        duration: 0.6,
+        duration: 0.4,
         ease: "power3.out",
-        delay: 0.2,
+        delay: 0.15,
         scrollTrigger: st,
       });
       gsap.to(".contact__cta", {
         opacity: 1,
         y: 0,
         scale: 1,
-        duration: 0.5,
+        duration: 0.35,
         ease: "back.out(1.4)",
-        delay: 0.3,
+        delay: 0.2,
         scrollTrigger: st,
       });
 
       const btn =
         containerRef.current?.querySelector<HTMLElement>(".contact__cta");
       if (!btn) return;
+
+      // Hover char animation — desktop only
+      if (window.matchMedia("(hover: none)").matches) return;
 
       const topChars = btn.querySelectorAll<HTMLElement>(".cta-char-top");
       const botChars = btn.querySelectorAll<HTMLElement>(".cta-char-bot");

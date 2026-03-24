@@ -29,12 +29,16 @@ export default function JourneySection() {
   const currentIdxRef = useRef(-1);
   const animatedRef = useRef(false);
   const [mounted, setMounted] = useState(false);
+  const isMobile = useRef(false);
 
   useEffect(() => {
+    isMobile.current = window.matchMedia("(hover: none)").matches;
     setMounted(true);
+
+    if (isMobile.current) return;
+
     const onMove = (e: MouseEvent) => {
       mousePosRef.current = { x: e.clientX, y: e.clientY };
-      // Update peek position directly on mousemove instead of RAF loop
       if (isVisibleRef.current && peekRef.current) {
         gsap.set(peekRef.current, {
           x: e.clientX + 24,
@@ -51,24 +55,6 @@ export default function JourneySection() {
       if (!isPageReady || animatedRef.current) return;
       animatedRef.current = true;
 
-      // Position is now updated directly in the mousemove handler above
-      const startFollow = () => {
-        // Snap to current position immediately on show
-        if (peekRef.current) {
-          gsap.set(peekRef.current, {
-            x: mousePosRef.current.x + 24,
-            y: mousePosRef.current.y - PEEK_H / 2,
-          });
-        }
-      };
-
-      const stopFollow = () => {
-        if (rafRef.current) {
-          cancelAnimationFrame(rafRef.current);
-          rafRef.current = null;
-        }
-      };
-
       // — Header reveal —
       gsap.set(".journey__label", { yPercent: 120, opacity: 0 });
       gsap.set(".journey__title span", { yPercent: 110 });
@@ -81,15 +67,15 @@ export default function JourneySection() {
       gsap.to(".journey__label", {
         yPercent: 0,
         opacity: 1,
-        duration: 0.5,
+        duration: 0.35,
         ease: "power4.out",
         scrollTrigger: headerST,
       });
       gsap.to(".journey__title span", {
         yPercent: 0,
-        duration: 0.7,
+        duration: 0.45,
         ease: "power4.out",
-        stagger: 0.06,
+        stagger: 0.04,
         scrollTrigger: headerST,
       });
 
@@ -112,19 +98,19 @@ export default function JourneySection() {
           .fromTo(
             line,
             { scaleX: 0, transformOrigin: "left center" },
-            { scaleX: 1, duration: 0.5, ease: "power3.inOut" },
+            { scaleX: 1, duration: 0.35, ease: "power3.inOut" },
           )
           .fromTo(
             index,
             { opacity: 0, x: -20 },
-            { opacity: 1, x: 0, duration: 0.4, ease: "power3.out" },
-            "-=0.3",
+            { opacity: 1, x: 0, duration: 0.3, ease: "power3.out" },
+            "-=0.2",
           )
           .fromTo(
             content,
             { opacity: 0, y: 20 },
-            { opacity: 1, y: 0, duration: 0.5, ease: "power3.out" },
-            "-=0.3",
+            { opacity: 1, y: 0, duration: 0.35, ease: "power3.out" },
+            "-=0.2",
           )
           .fromTo(
             tags,
@@ -133,11 +119,11 @@ export default function JourneySection() {
               opacity: 1,
               y: 0,
               scale: 1,
-              duration: 0.35,
+              duration: 0.25,
               ease: "power2.out",
-              stagger: 0.05,
+              stagger: 0.04,
             },
-            "-=0.3",
+            "-=0.2",
           );
 
         gsap.to(index, {
@@ -150,6 +136,9 @@ export default function JourneySection() {
             scrub: true,
           },
         });
+
+        // Hover interactions — desktop only
+        if (isMobile.current) return;
 
         row.addEventListener("mouseenter", () => {
           const prevIdx = currentIdxRef.current;
@@ -178,7 +167,6 @@ export default function JourneySection() {
                 ease: "power3.out",
               });
             }
-            startFollow();
           } else {
             if (outgoing) {
               gsap.killTweensOf(outgoing);
@@ -195,12 +183,17 @@ export default function JourneySection() {
         });
       });
 
+      if (isMobile.current) return;
+
       rowsRef.current?.addEventListener("mouseleave", () => {
         const peek = peekRef.current;
         if (!peek || !isVisibleRef.current) return;
         isVisibleRef.current = false;
         currentIdxRef.current = -1;
-        stopFollow();
+        if (rafRef.current) {
+          cancelAnimationFrame(rafRef.current);
+          rafRef.current = null;
+        }
         gsap.killTweensOf(peek);
         gsap.to(peek, {
           scale: 0.85,
@@ -222,6 +215,7 @@ export default function JourneySection() {
       className="journey__container container mx-auto w-full px-4 py-16 md:px-10 md:py-24 2xl:py-32"
     >
       {mounted &&
+        !isMobile.current &&
         createPortal(
           <JourneyPeek ref={peekRef} imgRefs={imgRefs} srcs={srcs} />,
           document.body,
