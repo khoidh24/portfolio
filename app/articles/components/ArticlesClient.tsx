@@ -14,13 +14,22 @@ import { ArticleData } from "../services/article.type";
 
 const PAGE_SIZE = 6;
 type SortOrder = "asc" | "desc";
+type SortBy = "date" | "title";
 
 type FilterState = {
   q: string;
   tags: string[];
+  sortBy: SortBy;
   sort: SortOrder;
   page: number;
 };
+
+const SORT_OPTIONS = [
+  { label: "Newest", sortBy: "date" as SortBy, sort: "desc" as SortOrder },
+  { label: "Oldest", sortBy: "date" as SortBy, sort: "asc" as SortOrder },
+  { label: "A → Z", sortBy: "title" as SortBy, sort: "asc" as SortOrder },
+  { label: "Z → A", sortBy: "title" as SortBy, sort: "desc" as SortOrder },
+];
 
 type Props = { articles: ArticleData[]; isEmpty?: boolean };
 
@@ -30,20 +39,20 @@ export default function ArticlesClient({ articles, isEmpty }: Props) {
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
 
-  // Optimistic local state — updates instantly on interaction
   const [optimistic, setOptimistic] = useState<FilterState>(() => ({
     q: searchParams.get("q") ?? "",
     tags: searchParams.getAll("tag"),
-    sort: (searchParams.get("sort") ?? "asc") as SortOrder,
+    sortBy: (searchParams.get("sortBy") ?? "date") as SortBy,
+    sort: (searchParams.get("sort") ?? "desc") as SortOrder,
     page: Math.max(1, Number(searchParams.get("page") ?? "1")),
   }));
 
-  // Sync optimistic state when URL actually updates (e.g. back/forward)
   useEffect(() => {
     setOptimistic({
       q: searchParams.get("q") ?? "",
       tags: searchParams.getAll("tag"),
-      sort: (searchParams.get("sort") ?? "asc") as SortOrder,
+      sortBy: (searchParams.get("sortBy") ?? "date") as SortBy,
+      sort: (searchParams.get("sort") ?? "desc") as SortOrder,
       page: Math.max(1, Number(searchParams.get("page") ?? "1")),
     });
   }, [searchParams]);
@@ -51,17 +60,13 @@ export default function ArticlesClient({ articles, isEmpty }: Props) {
   const push = useCallback(
     (next: Partial<FilterState>) => {
       const merged: FilterState = { ...optimistic, ...next };
-      // Reset page unless explicitly changing page
       if (!("page" in next)) merged.page = 1;
-
-      // Update UI immediately
       setOptimistic(merged);
-
-      // Push URL in background transition
       const params = new URLSearchParams();
       if (merged.q) params.set("q", merged.q);
       merged.tags.forEach((t) => params.append("tag", t));
-      if (merged.sort !== "asc") params.set("sort", merged.sort);
+      if (merged.sortBy !== "date") params.set("sortBy", merged.sortBy);
+      if (merged.sort !== "desc") params.set("sort", merged.sort);
       if (merged.page > 1) params.set("page", String(merged.page));
       const qs = params.toString();
       startTransition(() => {
@@ -89,11 +94,22 @@ export default function ArticlesClient({ articles, isEmpty }: Props) {
       );
     }
     result.sort((a, b) => {
+      if (optimistic.sortBy === "date") {
+        const cmp =
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        return optimistic.sort === "desc" ? cmp : -cmp;
+      }
       const cmp = a.title.localeCompare(b.title);
       return optimistic.sort === "asc" ? cmp : -cmp;
     });
     return result;
-  }, [articles, optimistic.q, optimistic.tags, optimistic.sort]);
+  }, [
+    articles,
+    optimistic.q,
+    optimistic.tags,
+    optimistic.sortBy,
+    optimistic.sort,
+  ]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(optimistic.page, totalPages);
@@ -131,11 +147,12 @@ export default function ArticlesClient({ articles, isEmpty }: Props) {
 
   return (
     <div className="flex flex-col gap-10">
-      {/* Controls — always instant, no pending state */}
+      {/* Controls */}
       <div className="flex flex-col gap-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+        {/* Search + Sort — same row on desktop */}
+        <div className="flex flex-col gap-6 md:flex-row md:items-center md:gap-4">
           {/* Search */}
-          <div className="relative flex-1">
+          <div className="border-foreground/10 relative flex-1 border md:h-[44px]">
             <span className="text-foreground/30 pointer-events-none absolute top-1/2 left-4 -translate-y-1/2">
               <svg
                 width="14"
@@ -154,63 +171,71 @@ export default function ArticlesClient({ articles, isEmpty }: Props) {
               value={optimistic.q}
               onChange={(e) => push({ q: e.target.value })}
               placeholder="Search articles..."
-              className="border-foreground/15 bg-foreground/3 text-foreground placeholder:text-foreground/30 focus:border-foreground/40 w-full rounded-none border py-3 pr-4 pl-10 text-sm outline-none transition-colors duration-200"
+              className="bg-foreground/3 text-foreground placeholder:text-foreground/30 focus:bg-foreground/5 w-full py-3.5 pr-4 pl-10 text-sm outline-none transition-colors duration-200 md:h-full md:py-0"
             />
           </div>
 
-          {/* Sort */}
-          <div className="border-foreground/15 flex shrink-0 overflow-hidden border">
-            <button
-              onClick={() => push({ sort: "asc" })}
-              className={`px-4 py-3 text-xs font-semibold tracking-widest uppercase transition-colors duration-200 ${
-                optimistic.sort === "asc"
-                  ? "bg-foreground text-background"
-                  : "text-foreground/40 hover:text-foreground"
-              }`}
-            >
-              A → Z
-            </button>
-            <div className="border-foreground/15 border-l" />
-            <button
-              onClick={() => push({ sort: "desc" })}
-              className={`px-4 py-3 text-xs font-semibold tracking-widest uppercase transition-colors duration-200 ${
-                optimistic.sort === "desc"
-                  ? "bg-foreground text-background"
-                  : "text-foreground/40 hover:text-foreground"
-              }`}
-            >
-              Z → A
-            </button>
+          {/* Sort pills */}
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-2.5">
+            <span className="text-foreground/30 border-foreground/10 border-b pb-2.5 text-[10px] font-semibold tracking-[0.2em] uppercase md:hidden">
+              Sort by
+            </span>
+            <div className="flex flex-wrap gap-2.5">
+              {SORT_OPTIONS.map((opt) => {
+                const active =
+                  optimistic.sortBy === opt.sortBy &&
+                  optimistic.sort === opt.sort;
+                return (
+                  <button
+                    key={opt.label}
+                    onClick={() => push({ sortBy: opt.sortBy, sort: opt.sort })}
+                    className={`border px-3.5 py-2 text-[10px] font-semibold tracking-[0.2em] uppercase transition-colors duration-200 ${
+                      active
+                        ? "border-foreground bg-foreground text-background"
+                        : "border-foreground/15 text-foreground/40 hover:border-foreground/40 hover:text-foreground"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
 
         {/* Tags */}
         {allTags.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {allTags.map((tag) => {
-              const active = optimistic.tags.includes(tag);
-              return (
+          <div className="flex flex-col gap-3">
+            {/* Label — mobile only */}
+            <span className="text-foreground/30 border-foreground/10 border-b pb-2.5 text-[10px] font-semibold tracking-[0.2em] uppercase md:hidden">
+              Tags
+            </span>
+            <div className="flex flex-wrap gap-2.5">
+              {allTags.map((tag) => {
+                const active = optimistic.tags.includes(tag);
+                return (
+                  <button
+                    key={tag}
+                    onClick={() => handleTag(tag)}
+                    className={`border px-3.5 py-2 text-[10px] font-semibold tracking-[0.2em] uppercase transition-colors duration-200 ${
+                      active
+                        ? "border-foreground bg-foreground text-background"
+                        : "border-foreground/15 text-foreground/40 hover:border-foreground/40 hover:text-foreground"
+                    }`}
+                  >
+                    {tag}
+                  </button>
+                );
+              })}
+              {optimistic.tags.length > 0 && (
                 <button
-                  key={tag}
-                  onClick={() => handleTag(tag)}
-                  className={`border px-3 py-1.5 text-[10px] font-semibold tracking-[0.2em] uppercase transition-colors duration-200 ${
-                    active
-                      ? "border-foreground bg-foreground text-background"
-                      : "border-foreground/15 text-foreground/40 hover:border-foreground/40 hover:text-foreground"
-                  }`}
+                  onClick={() => push({ tags: [] })}
+                  className="border border-red-500/60 px-3.5 py-2 text-[10px] font-semibold tracking-[0.2em] text-red-500/70 uppercase transition-colors duration-200 hover:border-red-500 hover:text-red-500"
                 >
-                  {tag}
+                  Clear ×
                 </button>
-              );
-            })}
-            {optimistic.tags.length > 0 && (
-              <button
-                onClick={() => push({ tags: [] })}
-                className="border-red-500/60 text-red-500/70 hover:border-red-500 hover:text-red-500 border px-3 py-1.5 text-[10px] font-semibold tracking-[0.2em] uppercase transition-colors duration-200"
-              >
-                Clear ×
-              </button>
-            )}
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -229,7 +254,7 @@ export default function ArticlesClient({ articles, isEmpty }: Props) {
         )}
       </div>
 
-      {/* List — dims while URL transition is pending */}
+      {/* List */}
       <div
         className={`flex flex-col transition-opacity duration-150 ${isPending ? "opacity-50" : "opacity-100"}`}
       >

@@ -20,6 +20,7 @@ export default function BlogItem({ data, index }: Props) {
           <Image
             src={data.thumbnail_url}
             alt={data.title}
+            title={data.title}
             fill
             className="object-cover"
             sizes="(max-width: 768px) 100vw, 380px"
