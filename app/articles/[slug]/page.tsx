@@ -6,6 +6,7 @@ import Image from "next/image";
 import { notFound } from "next/navigation";
 
 import View from "./components/View";
+import RelatedArticles from "./components/RelatedArticles";
 
 export const revalidate = 604800;
 
@@ -122,6 +123,55 @@ export default async function BlogDetailPage({
 
   const headings = data.content ? extractHeadings(data.content) : [];
 
+  // Fetch related articles via shared tags
+  const { data: tagRows } = await supabase
+    .from("article_tags")
+    .select("tag_id")
+    .eq("article_id", data.id);
+
+  const tagIds = (tagRows ?? []).map((r) => r.tag_id);
+
+  let relatedArticles: {
+    slug: string;
+    title: string;
+    thumbnail_url: string;
+    created_at: string;
+    author: string;
+    summary?: string;
+  }[] = [];
+
+  if (tagIds.length > 0) {
+    // Get article_ids that share at least one tag, excluding current
+    const { data: overlap } = await supabase
+      .from("article_tags")
+      .select("article_id")
+      .in("tag_id", tagIds)
+      .neq("article_id", data.id);
+
+    // Count tag overlap per article, sort by most overlap
+    const countMap = new Map<string, number>();
+    (overlap ?? []).forEach(({ article_id }) => {
+      countMap.set(article_id, (countMap.get(article_id) ?? 0) + 1);
+    });
+
+    const topIds = [...countMap.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([id]) => id);
+
+    if (topIds.length > 0) {
+      const { data: related } = await supabase
+        .from("articles")
+        .select("id, slug, title, thumbnail_url, created_at, author, summary")
+        .in("id", topIds);
+
+      // Preserve relevance order
+      relatedArticles = topIds
+        .map((id) => related?.find((r) => r.id === id))
+        .filter(Boolean) as typeof relatedArticles;
+    }
+  }
+
   return (
     <>
       <div className="mx-auto w-full xl:px-[84px]">
@@ -162,6 +212,8 @@ export default async function BlogDetailPage({
         <div className="markdown-wrapper mx-auto max-w-3xl">
           <View doc={data.content} titleForSEO={data.title} />
         </div>
+
+        <RelatedArticles articles={relatedArticles} />
 
         <div id="article-end" />
       </section>
