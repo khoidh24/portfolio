@@ -87,7 +87,7 @@ A clean home is a happy home. Here's how we organize our chaos:
 │
 ├── 📂 components/             # Reusable UI components
 │   ├── 🖱️ CustomCursor.tsx    # Custom cursor with tail & inertia effect
-│   ├── 🔗 LinkAnimation.tsx   # Animated link component
+│   ├── 🔗 TransitionLink.tsx   # Animated link component
 │   ├── 🧲 MagneticElement.tsx # Magnetic hover effect component
 │   ├── 🪟 Modal.tsx           # Modal component
 │   ├── 🧭 Navigation.tsx      # Main navigation component

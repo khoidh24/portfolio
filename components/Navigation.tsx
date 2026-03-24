@@ -9,7 +9,7 @@ import gsap from "gsap";
 import { Menu } from "lucide-react";
 import { usePathname } from "next/navigation";
 
-import LinkAnimation from "./LinkAnimation";
+import TransitionLink from "./TransitionLink";
 import MagneticElement from "./MagneticElement";
 import Modal from "./Modal";
 
@@ -60,7 +60,7 @@ export default function Navigation() {
         <div className="container mx-auto flex items-center justify-between px-10 py-2 max-xl:px-4 xl:rounded-2xl xl:py-4">
           <MagneticElement>
             <div className="h-full text-end max-xl:hidden">
-              <LinkAnimation
+              <TransitionLink
                 href={NAVIGATION_PATHS.articles.href}
                 label={NAVIGATION_PATHS.articles.label}
               />
@@ -68,14 +68,14 @@ export default function Navigation() {
           </MagneticElement>
           <div className="h-full">
             {pathname !== NAVIGATION_PATHS.home.href ? (
-              <LinkAnimation
+              <TransitionLink
                 href={NAVIGATION_PATHS.home.href}
                 label={NAVIGATION_PATHS.home.label}
               >
                 <p className="font-heading text-2xl font-bold text-nowrap uppercase xl:text-2xl">
                   Volunote
                 </p>
-              </LinkAnimation>
+              </TransitionLink>
             ) : (
               <h1 className="text-[24px] font-bold text-nowrap uppercase">
                 Volunote
@@ -84,7 +84,7 @@ export default function Navigation() {
           </div>
           <MagneticElement>
             <div className="h-full text-end max-xl:hidden">
-              <LinkAnimation
+              <TransitionLink
                 href={NAVIGATION_PATHS.contact.href}
                 label={NAVIGATION_PATHS.contact.label}
               />
@@ -109,7 +109,7 @@ export default function Navigation() {
               Navigation
             </p>
             <div className="text-background mx-4 mt-4 flex flex-col items-start justify-start gap-2">
-              <LinkAnimation
+              <TransitionLink
                 href={NAVIGATION_PATHS.home.href}
                 label={NAVIGATION_PATHS.home.label}
                 className={cn(
@@ -118,7 +118,7 @@ export default function Navigation() {
                 )}
                 onClick={() => setIsOpen(false)}
               />
-              <LinkAnimation
+              <TransitionLink
                 href={NAVIGATION_PATHS.contact.href}
                 label={NAVIGATION_PATHS.contact.label}
                 className={cn(
@@ -128,7 +128,7 @@ export default function Navigation() {
                 )}
                 onClick={() => setIsOpen(false)}
               />
-              <LinkAnimation
+              <TransitionLink
                 href={NAVIGATION_PATHS.articles.href}
                 label={NAVIGATION_PATHS.articles.label}
                 className={cn(

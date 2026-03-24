@@ -342,8 +342,11 @@ export default function HeroSection() {
     initializedRef.current = false;
     return () => {
       mountedRef.current = false;
+      // Reset ready state so template waits for canvas on next visit
+      setIsReady(false);
+      setLoadedImageCount(0);
     };
-  }, []);
+  }, [setIsReady, setLoadedImageCount]);
 
   useEffect(() => {
     isMobileRef.current = getIsMobile();

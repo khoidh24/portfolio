@@ -2,7 +2,7 @@ import { NAVIGATION_PATHS } from "@/constants";
 import moment from "moment";
 import Image from "next/image";
 
-import LinkAnimation from "@/components/LinkAnimation";
+import TransitionLink from "@/components/TransitionLink";
 
 import { ArticleData } from "../services/article.type";
 
@@ -10,7 +10,7 @@ type Props = { data: ArticleData; index: number };
 
 export default function BlogItem({ data, index }: Props) {
   return (
-    <LinkAnimation
+    <TransitionLink
       href={`${NAVIGATION_PATHS.articles.href}/${data.slug}`}
       label={data.title}
       className="group block w-full text-left"
@@ -74,6 +74,6 @@ export default function BlogItem({ data, index }: Props) {
           </span>
         </div>
       </div>
-    </LinkAnimation>
+    </TransitionLink>
   );
 }

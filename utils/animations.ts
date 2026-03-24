@@ -23,6 +23,7 @@ export const pageInLoadingAnimation = (onComplete?: () => void) => {
 
     tl.to(loading, {
       opacity: 0,
+      duration: 0.3,
       onComplete: () => {
         loading.style.display = "none";
       },
@@ -30,12 +31,14 @@ export const pageInLoadingAnimation = (onComplete?: () => void) => {
       banners,
       {
         yPercent: 100,
-        stagger: 0.05,
+        stagger: 0.04,
+        duration: 0.5,
+        ease: "power3.inOut",
         onComplete: () => {
           onComplete?.();
         },
       },
-      "+=0.5",
+      "+=0.1",
     );
   }
 };
@@ -63,7 +66,9 @@ export const pageInWithoutLoadingAnimation = (onComplete?: () => void) => {
     tl.set(banners, { yPercent: 0 });
     tl.to(banners, {
       yPercent: 100,
-      stagger: 0.05,
+      stagger: 0.04,
+      duration: 0.5,
+      ease: "power3.inOut",
       onComplete: () => {
         onComplete?.();
       },
@@ -95,23 +100,27 @@ export const runPageOutLoadingOverlayAnimation = (
 
     tl.to(banners, {
       yPercent: 0,
-      stagger: 0.05,
+      stagger: 0.04,
+      duration: 0.45,
+      ease: "power3.inOut",
       overwrite: true,
     });
 
     if (skipLoadingPercent) {
-      tl.call(
-        () => {
-          onComplete?.();
-        },
-        [],
-        "+=0.3",
-      );
+      // Subsequent nav: no loading %, navigate right after banners cover screen
+      // Hide loading overlay immediately so it doesn't flash on the new page
+      if (loading) {
+        loading.style.display = "none";
+        loading.style.opacity = "0";
+      }
+      tl.call(() => onComplete?.(), [], "+=0.05");
     } else {
+      // First load: show loading % overlay, then navigate
       tl.to(
         loading,
         {
           opacity: 1,
+          duration: 0.2,
           onStart: () => {
             loading.style.display = "flex";
             window.dispatchEvent(new CustomEvent("resetLoadingProgress"));
@@ -120,7 +129,7 @@ export const runPageOutLoadingOverlayAnimation = (
             onComplete?.();
           },
         },
-        "+=0.5",
+        "+=0.1",
       );
     }
   }

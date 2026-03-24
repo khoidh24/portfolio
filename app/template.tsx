@@ -119,8 +119,9 @@ export default function Template({ children }: Props) {
     pathnameRef.current = pathname;
   }, [pathname]);
 
-  // Smooth percent counter
+  // Smooth percent counter — only relevant during initial load
   useEffect(() => {
+    if (hasInitialLoadCompleted) return;
     const obj = { value: animatedPercent };
     const tween = gsap.to(obj, {
       value: percentNumber,
@@ -132,7 +133,7 @@ export default function Template({ children }: Props) {
       tween.kill();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [percentNumber]);
+  }, [percentNumber, hasInitialLoadCompleted]);
 
   // Lenis setup — runs once, never torn down on navigation
   useLayoutEffect(() => {
@@ -181,12 +182,7 @@ export default function Template({ children }: Props) {
       if (target === current) return;
       e.stopImmediatePropagation();
       window.history.pushState(window.history.state, "", current);
-      pageOutLoadingAnimation(
-        target,
-        router,
-        undefined,
-        useLoadingProgressStore.getState().hasInitialLoadCompleted,
-      );
+      pageOutLoadingAnimation(target, router, undefined, true);
     };
     window.addEventListener("popstate", handle, { capture: true });
     return () =>
@@ -200,6 +196,9 @@ export default function Template({ children }: Props) {
       isDocumentReadyRef.current = false;
       setPercentNumber(0);
       setIsLoadingComplete(false);
+      setAnimatedPercent(0);
+    } else {
+      // After initial load: ensure loading overlay stays hidden on new pages
       setAnimatedPercent(0);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -219,7 +218,7 @@ export default function Template({ children }: Props) {
 
   // Track document ready for non-home pages
   useEffect(() => {
-    if (pathname === "/") return;
+    if (pathname === "/" || hasInitialLoadCompleted) return;
     const check = () => {
       if (document.readyState === "complete") {
         isDocumentReadyRef.current = true;
@@ -234,10 +233,16 @@ export default function Template({ children }: Props) {
       window.removeEventListener("load", check);
       document.removeEventListener("readystatechange", check);
     };
-  }, [pathname, setPercentNumber, setIsLoadingComplete]);
+  }, [
+    pathname,
+    hasInitialLoadCompleted,
+    setPercentNumber,
+    setIsLoadingComplete,
+  ]);
 
   // Loading progress calculation
   useEffect(() => {
+    if (hasInitialLoadCompleted) return;
     if (pathname === "/") {
       setPercentNumber(Math.round((loadedImageCount / TOTAL_FRAMES) * 100));
       if (loadedImageCount === TOTAL_FRAMES) setIsLoadingComplete(true);
@@ -252,11 +257,19 @@ export default function Template({ children }: Props) {
         return () => clearInterval(id);
       }
     }
-  }, [pathname, loadedImageCount, setPercentNumber, setIsLoadingComplete]);
+  }, [
+    pathname,
+    loadedImageCount,
+    hasInitialLoadCompleted,
+    setPercentNumber,
+    setIsLoadingComplete,
+  ]);
 
   // Subsequent navigations — page-in without loading screen
+  // Non-home pages: trigger immediately on pathname change
   useEffect(() => {
     if (!hasInitialLoadCompleted || animationTriggeredRef.current) return;
+    if (pathname === "/") return; // homepage handled separately below
     animationTriggeredRef.current = true;
     lenisRef.current?.scrollTo(0, { immediate: true }) ?? window.scrollTo(0, 0);
     const raf = requestAnimationFrame(() => {
@@ -268,6 +281,22 @@ export default function Template({ children }: Props) {
     return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
+
+  // Homepage: wait for canvas ready before animating in
+  useEffect(() => {
+    if (!hasInitialLoadCompleted || animationTriggeredRef.current) return;
+    if (pathname !== "/" || !isReady) return;
+    animationTriggeredRef.current = true;
+    lenisRef.current?.scrollTo(0, { immediate: true }) ?? window.scrollTo(0, 0);
+    const raf = requestAnimationFrame(() => {
+      pageInWithoutLoadingAnimation(() => {
+        ScrollTrigger.refresh();
+        dispatchPageReady();
+      });
+    });
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isReady]);
 
   // First load — run after loading hits 100%
   useEffect(() => {
@@ -289,7 +318,7 @@ export default function Template({ children }: Props) {
         dispatchPageReady();
       });
       animationTriggeredRef.current = true;
-    }, 1600);
+    }, 800);
     return () => clearTimeout(id);
   }, [
     pathname,
@@ -347,6 +376,9 @@ export default function Template({ children }: Props) {
       <div
         id="loading"
         className="fixed inset-0 z-9999 flex min-h-screen w-full flex-col items-center justify-center gap-6 px-6"
+        style={
+          hasInitialLoadCompleted ? { display: "none", opacity: 0 } : undefined
+        }
       >
         <div
           className="flex items-end overflow-hidden"
