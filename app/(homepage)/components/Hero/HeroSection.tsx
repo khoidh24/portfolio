@@ -12,8 +12,6 @@ const BATCH_SIZE = 8;
 const getIsMobile = () =>
   typeof window !== "undefined" && window.innerWidth < 768;
 const getPixelRatio = () => Math.min(window.devicePixelRatio || 1, 2);
-
-// Pre-build frame URL cache — avoids string allocation on every scroll tick
 const FRAME_URLS = Array.from(
   { length: TOTAL_FRAMES },
   (_, i) => `/motion/frame_${i.toString().padStart(5, "0")}.webp`,
@@ -407,7 +405,8 @@ export default function HeroSection() {
         <img
           ref={imgRef}
           alt=""
-          className="md:hidden h-screen w-full object-cover"
+          className="md:hidden w-full object-cover"
+          style={{ height: "100lvh" }}
           src={currentFrame(0)}
         />
       </div>

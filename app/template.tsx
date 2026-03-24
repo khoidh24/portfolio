@@ -131,9 +131,6 @@ export default function Template({ children }: Props) {
   useLayoutEffect(() => {
     const isMobile = window.innerWidth < 768;
 
-    // normalizeScroll keeps address bar hidden on mobile — always enable
-    ScrollTrigger.normalizeScroll(true);
-
     if (isMobile) return;
 
     const lenis = new Lenis({

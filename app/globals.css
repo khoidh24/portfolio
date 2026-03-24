@@ -128,7 +128,11 @@
   pointer-events: none !important;
 }
 
-/* Journey row hover — only on devices that support hover */
+/* Hero section uses lvh so height matches expanded viewport (address bar hidden) */
+.hero {
+  min-height: 100lvh;
+}
+
 @media (hover: hover) {
   .journey__row {
     transition: background-color 0.3s;
