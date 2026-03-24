@@ -451,13 +451,13 @@ export default function HeroSection() {
       </div>
       <div className="hero__content absolute top-2/5 left-1/2 -translate-x-1/2 transform py-2 perspective-distant transform-3d">
         <div className="hero__header text-background absolute top-1/2 left-1/2 flex w-screen origin-center -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-4 text-center will-change-[transform,opacity]">
-          <h1 className="font-sans text-2xl font-bold tracking-normal xl:text-4xl">
+          <h1 className="font-sans text-2xl font-bold tracking-normal xl:text-4xl cursor-default">
             Your results reflect{" "}
             <span className="inline max-xl:inline-block">
               the effort invested.
             </span>
           </h1>
-          <p className="text-sm font-semibold xl:text-lg">
+          <p className="text-sm font-semibold xl:text-lg cursor-default">
             An interface is not just something to look at
             <span className="block">but an experience to feel.</span>
           </p>

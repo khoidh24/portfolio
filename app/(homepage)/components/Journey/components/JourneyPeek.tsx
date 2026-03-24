@@ -27,6 +27,8 @@ const JourneyPeek = forwardRef<HTMLDivElement, Props>(
         width: PEEK_W,
         height: PEEK_H,
         willChange: "transform",
+        // Start off-screen so it never flashes at (0,0) before first mousemove
+        transform: "translateX(-9999px) translateY(-9999px)",
         background: "var(--background)",
         border: "1px solid rgba(36,25,16,0.1)",
         boxShadow: "0 2px 12px rgba(36,25,16,0.07)",

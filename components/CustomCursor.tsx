@@ -4,24 +4,25 @@ import { useEffect, useRef } from "react";
 
 import gsap from "gsap";
 
-// Tags that are always interactive
 const INTERACTIVE_TAGS = new Set(["A", "BUTTON", "INPUT", "TEXTAREA", "LABEL"]);
-// Heading tags
 const HEADING_TAGS = new Set(["H1", "H2", "H3", "H4", "H5", "H6"]);
 
 export default function CustomCursor() {
   const cursorOuterRef = useRef<HTMLDivElement>(null);
   const cursorInnerRef = useRef<HTMLDivElement>(null);
   const isHovering = useRef(false);
+  const hasMovedRef = useRef(false);
 
   useEffect(() => {
     const outer = cursorOuterRef.current;
     const inner = cursorInnerRef.current;
     if (!outer || !inner) return;
 
+    // Start fully hidden — snap into position on first mousemove
+    gsap.set([outer, inner], { opacity: 0 });
+
     const setOuterX = gsap.quickSetter(outer, "x", "px") as (v: number) => void;
     const setOuterY = gsap.quickSetter(outer, "y", "px") as (v: number) => void;
-
     const toInnerX = gsap.quickTo(inner, "x", {
       duration: 0.2,
       ease: "power2.out",
@@ -34,28 +35,32 @@ export default function CustomCursor() {
     const setHover = (val: boolean) => {
       if (isHovering.current === val) return;
       isHovering.current = val;
-      const size = val ? "56px" : "24px";
-      const innerSize = val ? "52px" : "8px";
       gsap.to(outer, {
-        width: size,
-        height: size,
+        width: val ? "56px" : "24px",
+        height: val ? "56px" : "24px",
         duration: 0.3,
         ease: "power2.out",
       });
       gsap.to(inner, {
-        width: innerSize,
-        height: innerSize,
+        width: val ? "52px" : "8px",
+        height: val ? "52px" : "8px",
         duration: 0.3,
         ease: "power2.out",
       });
     };
 
-    // Cache exclusion zones — re-check only on DOM changes, not every mousemove
-    let inExclusionZone = false;
     const exclusionSelectors = [".markdown-body", ".hero"];
 
     const handleMouseMove = (e: MouseEvent) => {
       const { clientX, clientY } = e;
+
+      // Snap to position on first move, then fade in
+      if (!hasMovedRef.current) {
+        hasMovedRef.current = true;
+        gsap.set(outer, { x: clientX, y: clientY });
+        gsap.set(inner, { x: clientX, y: clientY });
+        gsap.to([outer, inner], { opacity: 1, duration: 0.3 });
+      }
 
       setOuterX(clientX);
       setOuterY(clientY);
@@ -65,7 +70,6 @@ export default function CustomCursor() {
       const target = e.target as HTMLElement;
       const tag = target.tagName;
 
-      // Fast path: check tag first before any DOM traversal
       const isInteractiveTag =
         INTERACTIVE_TAGS.has(tag) ||
         HEADING_TAGS.has(tag) ||
@@ -79,14 +83,14 @@ export default function CustomCursor() {
         return;
       }
 
-      // Only do expensive DOM traversal when tag check passes
-      inExclusionZone = exclusionSelectors.some((sel) => target.closest(sel));
+      const inExclusionZone = exclusionSelectors.some((sel) =>
+        target.closest(sel),
+      );
       if (inExclusionZone) {
         setHover(false);
         return;
       }
 
-      // Check if inside interactive ancestor (only when needed)
       const interactive =
         INTERACTIVE_TAGS.has(tag) ||
         HEADING_TAGS.has(tag) ||
@@ -100,10 +104,12 @@ export default function CustomCursor() {
       setHover(interactive);
     };
 
-    const handleMouseEnter = () =>
-      gsap.to([outer, inner], { opacity: 1, duration: 0.3 });
     const handleMouseLeave = () =>
       gsap.to([outer, inner], { opacity: 0, duration: 0.3 });
+    const handleMouseEnter = () => {
+      if (hasMovedRef.current)
+        gsap.to([outer, inner], { opacity: 1, duration: 0.3 });
+    };
 
     window.addEventListener("mousemove", handleMouseMove, { passive: true });
     document.body.addEventListener("mouseenter", handleMouseEnter);
