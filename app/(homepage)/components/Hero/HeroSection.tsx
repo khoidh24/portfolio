@@ -1,325 +1,218 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
-
 import { TOTAL_FRAMES } from "@/constants";
 import { useLoadImageStore } from "@/stores/useLoadImageStore";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 
-const BATCH_SIZE = 8;
-
-const getIsMobile = () =>
-  typeof window !== "undefined" && window.innerWidth < 768;
-const getPixelRatio = () => Math.min(window.devicePixelRatio || 1, 2);
+const BATCH_SIZE = 10;
 const FRAME_URLS = Array.from(
   { length: TOTAL_FRAMES },
   (_, i) => `/motion/frame_${i.toString().padStart(5, "0")}.webp`,
 );
-const currentFrame = (index: number) => FRAME_URLS[index];
 
 export default function HeroSection() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
-  const contextRef = useRef<CanvasRenderingContext2D | null>(null);
+  const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
   const imagesRef = useRef<HTMLImageElement[]>([]);
-  const bitmapsRef = useRef<(ImageBitmap | null)[]>([]);
-  const videoFrameRef = useRef<{ frame: number }>({ frame: 0 });
-  const scrollTriggerRef = useRef<ScrollTrigger | null>(null);
-  const canvasDimsRef = useRef({ w: 0, h: 0 });
-  const rafRef = useRef<number | null>(null);
-  const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const initializedRef = useRef(false);
-  const mountedRef = useRef(false);
+  const frameRef = useRef(0);
+  const stRef = useRef<ScrollTrigger | null>(null);
   const isMobileRef = useRef(false);
-  // Track in-progress createImageBitmap calls to avoid duplicates
-  const decodingRef = useRef<Set<number>>(new Set());
+  const mountedRef = useRef(true);
 
   const setImages = useLoadImageStore((s) => s.setImages);
   const images = useLoadImageStore((s) => s.images);
   const setIsReady = useLoadImageStore((s) => s.setIsReady);
   const setLoadedImageCount = useLoadImageStore((s) => s.setLoadedImageCount);
 
-  // ── Bitmap decode (desktop only) ────────────────────────────────────────
-  // createImageBitmap is async and runs off the main thread in modern browsers.
-  // No worker needed — avoids double-fetching frames that <img> already loaded.
-  const decodeBitmap = useCallback((index: number, img: HTMLImageElement) => {
-    if (isMobileRef.current) return;
-    const bitmaps = bitmapsRef.current;
-    const decoding = decodingRef.current;
-    if (bitmaps[index] != null || decoding.has(index)) return;
-    decoding.add(index);
-    createImageBitmap(img)
-      .then((bitmap) => {
-        decoding.delete(index);
-        if (!mountedRef.current) {
-          bitmap.close();
-          return;
-        }
-        bitmaps[index] = bitmap;
-        if (videoFrameRef.current.frame === index) scheduleRender();
-      })
-      .catch(() => decoding.delete(index));
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Render ───────────────────────────────────────────────────────────────
-  // Mobile: swap <img> src — browser handles decode/cache, zero GPU overhead
-  const renderMobile = useCallback(() => {
-    const el = imgRef.current;
-    if (!el) return;
-    const src = currentFrame(videoFrameRef.current.frame);
-    if (!el.src.endsWith(src)) el.src = src;
-  }, []);
-
-  const drawSource = useCallback(
-    (source: HTMLImageElement | ImageBitmap, sw: number, sh: number) => {
-      const context = contextRef.current;
-      const { w, h } = canvasDimsRef.current;
-      if (!context || !w || !h) return;
-
-      const imageAspect = sw / sh;
-      const canvasAspect = w / h;
-      let drawWidth: number, drawHeight: number, drawX: number, drawY: number;
-
-      if (imageAspect > canvasAspect) {
-        drawHeight = h;
-        drawWidth = drawHeight * imageAspect;
-        drawX = (w - drawWidth) / 2;
-        drawY = 0;
-      } else {
-        drawWidth = w;
-        drawHeight = drawWidth / imageAspect;
-        drawX = 0;
-        drawY = (h - drawHeight) / 2;
-      }
-      context.clearRect(0, 0, w, h);
-      context.drawImage(source, drawX, drawY, drawWidth, drawHeight);
-    },
-    [],
-  );
-
-  const renderDesktop = useCallback(() => {
-    const { frame } = videoFrameRef.current;
-    const bitmap = bitmapsRef.current[frame];
-    if (bitmap) {
-      drawSource(bitmap, bitmap.width, bitmap.height);
-      return;
-    }
-    const img = imagesRef.current[frame];
-    if (img?.complete && img.naturalWidth > 0)
-      drawSource(img, img.naturalWidth, img.naturalHeight);
-  }, [drawSource]);
-
+  // Render frame
   const render = useCallback(() => {
-    if (isMobileRef.current) renderMobile();
-    else renderDesktop();
-  }, [renderMobile, renderDesktop]);
+    const frame = frameRef.current;
+    if (isMobileRef.current) {
+      const img = imgRef.current;
+      if (img) img.src = FRAME_URLS[frame];
+    } else {
+      const ctx = ctxRef.current;
+      const canvas = canvasRef.current;
+      const img = imagesRef.current[frame];
+      if (!ctx || !canvas || !img?.complete) return;
 
-  const scheduleRender = useCallback(() => {
-    if (rafRef.current !== null) return;
-    rafRef.current = requestAnimationFrame(() => {
-      rafRef.current = null;
-      render();
-    });
-  }, [render]);
+      const cw = canvas.width;
+      const ch = canvas.height;
+      const iw = img.naturalWidth;
+      const ih = img.naturalHeight;
+      const ratio = Math.max(cw / iw, ch / ih);
+      const w = iw * ratio;
+      const h = ih * ratio;
+      const x = (cw - w) / 2;
+      const y = (ch - h) / 2;
 
-  // ── Canvas size (desktop only) ───────────────────────────────────────────
-  const updateCanvasSize = useCallback(() => {
-    const canvas = canvasRef.current;
-    const context = contextRef.current;
-    if (!canvas || !context) return;
-
-    const pixelRatio = getPixelRatio();
-    const w = window.innerWidth;
-    const h = window.innerHeight;
-
-    canvas.width = w * pixelRatio;
-    canvas.height = h * pixelRatio;
-    canvas.style.width = `${w}px`;
-    canvas.style.height = `${h}px`;
-    context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-    canvasDimsRef.current = { w, h };
+      ctx.clearRect(0, 0, cw, ch);
+      ctx.drawImage(img, x, y, w, h);
+    }
   }, []);
 
-  const handleResize = useCallback(() => {
-    if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
-    resizeTimerRef.current = setTimeout(() => {
-      if (!isMobileRef.current) updateCanvasSize();
-      else
-        canvasDimsRef.current = { w: window.innerWidth, h: window.innerHeight };
-      render();
-      scrollTriggerRef.current?.refresh();
-    }, 150);
-  }, [updateCanvasSize, render]);
-
-  // ── ScrollTrigger ────────────────────────────────────────────────────────
-  const setupScrollTrigger = useCallback(() => {
-    scrollTriggerRef.current?.kill();
-
-    const { h } = canvasDimsRef.current;
+  // Setup ScrollTrigger
+  const setupST = useCallback(() => {
+    stRef.current?.kill();
     const mobile = isMobileRef.current;
-    const last = {
-      navZone: -1,
-      headerVisible: -1,
-      wrapperZone: -1,
-      navOpacity: -1,
-    };
+    const h = window.innerHeight;
 
     const navEls = gsap.utils.toArray<HTMLElement>("nav, .open__drawer");
     const navContainer = document.querySelector<HTMLElement>(".nav__container");
     const heroHeader = document.querySelector<HTMLElement>(".hero__header");
     const heroWrapper = document.querySelector<HTMLElement>(".hero__wrapper");
+
     const setNavOpacity = navEls.length
-      ? (gsap.quickSetter(navEls, "opacity") as (v: number) => void)
+      ? gsap.quickSetter(navEls, "opacity")
+      : null;
+    const setHeaderOpacity = heroHeader
+      ? gsap.quickSetter(heroHeader, "opacity")
+      : null;
+    const setHeaderZ = heroHeader
+      ? (v: number) => heroHeader.style.setProperty("--hero-z", `${v}px`)
+      : null;
+    const setWrapperMargin = heroWrapper
+      ? gsap.quickSetter(heroWrapper, "margin")
       : null;
 
-    scrollTriggerRef.current = ScrollTrigger.create({
+    if (heroWrapper) {
+      heroWrapper.style.overflow = "hidden";
+      heroWrapper.style.borderRadius = "0";
+    }
+
+    let lastZone = -1;
+    let lastHeaderVisible = -1;
+    let lastWrapperZone = -1;
+    let lastOpacity = -1;
+
+    stRef.current = ScrollTrigger.create({
       trigger: ".hero",
       start: "top top",
-      end: `+=${h * 4.5}px`,
+      end: `+=${h * 4.5}`,
       pin: true,
-      pinSpacing: true,
       scrub: mobile ? 1 : 0.5,
       onUpdate: (self) => {
-        const progress = self.progress;
+        const p = self.progress;
 
-        const animationProgress = Math.min(progress / 0.9, 1);
-        const targetFrame = Math.round(animationProgress * (TOTAL_FRAMES - 1));
-        if (videoFrameRef.current.frame !== targetFrame) {
-          videoFrameRef.current.frame = targetFrame;
-          scheduleRender();
+        // Frame
+        const targetFrame = Math.round(
+          Math.min(p / 0.9, 1) * (TOTAL_FRAMES - 1),
+        );
+        if (frameRef.current !== targetFrame) {
+          frameRef.current = targetFrame;
+          render();
         }
 
-        const navZone = progress <= 0.1 ? 0 : progress >= 0.85 ? 2 : 1;
-        if (navZone === 0) {
-          const opacity = Math.round((1 - progress / 0.1) * 100) / 100;
-          if (opacity !== last.navOpacity) {
+        // Nav zones
+        const zone = p <= 0.1 ? 0 : p >= 0.85 ? 2 : 1;
+        if (zone === 0) {
+          const opacity = 1 - p / 0.1;
+          if (opacity !== lastOpacity) {
             setNavOpacity?.(opacity);
-            last.navOpacity = opacity;
+            lastOpacity = opacity;
           }
-          if (last.navZone !== 0) {
+          if (lastZone !== 0) {
             gsap.set(navEls, {
               zIndex: 100,
               color: "var(--background)",
               borderColor: "var(--background)",
             });
-            if (navContainer)
+            if (navContainer && !mobile)
               gsap.set(navContainer, {
                 backdropFilter: "blur(0px)",
                 background: "transparent",
               });
           }
-        } else if (navZone === 1) {
-          if (last.navZone !== 1) {
-            gsap.set(navEls, {
-              opacity: 0,
-              zIndex: 0,
-              borderColor: "var(--foreground)",
+        } else if (zone === 1 && lastZone !== 1) {
+          gsap.set(navEls, {
+            opacity: 0,
+            zIndex: 0,
+            borderColor: "var(--foreground)",
+          });
+          if (navContainer && !mobile)
+            gsap.set(navContainer, {
+              background:
+                "color-mix(in srgb, var(--background) 5%, transparent)",
+              backdropFilter: "blur(8px)",
             });
-            if (navContainer)
-              gsap.set(navContainer, {
-                background:
-                  "color-mix(in srgb, var(--background) 5%, transparent)",
-                backdropFilter: "blur(8px)",
-              });
-            last.navOpacity = 0;
-          }
+          lastOpacity = 0;
         }
-        last.navZone = navZone;
+        lastZone = zone;
 
-        const headerVisible = progress <= 0.25 ? 1 : 0;
+        // Header
+        const headerVisible = p <= 0.25 ? 1 : 0;
         if (headerVisible) {
-          const zProgress = progress / 0.25;
-          const translateZ = zProgress * -500;
-          const opacity =
-            progress >= 0.2 ? 1 - Math.min((progress - 0.2) / 0.05, 1) : 1;
-          if (heroHeader)
-            gsap.set(heroHeader, {
-              transform: `translate(-50%, -50%) translateZ(${translateZ}px)`,
-              opacity,
-            });
-        } else if (last.headerVisible !== 0) {
-          if (heroHeader) gsap.set(heroHeader, { opacity: 0 });
+          setHeaderZ?.((p / 0.25) * -500);
+          setHeaderOpacity?.(p >= 0.2 ? 1 - (p - 0.2) / 0.05 : 1);
+        } else if (lastHeaderVisible !== 0) {
+          setHeaderOpacity?.(0);
         }
-        last.headerVisible = headerVisible;
+        lastHeaderVisible = headerVisible;
 
-        const wrapperZone = progress >= 0.85 ? 1 : 0;
+        // Wrapper
+        const wrapperZone = p >= 0.85 ? 1 : 0;
         if (wrapperZone) {
-          const { w } = canvasDimsRef.current;
-          const margin = (w <= 768 ? 120 : 560) * (progress - 0.85);
-          if (heroWrapper)
-            gsap.set(heroWrapper, {
-              margin: `0 ${margin}px`,
-              borderRadius: w <= 768 ? "16px" : "24px",
-              overflow: "hidden",
-              zIndex: 2,
-            });
-          const revealOpacity = Math.min(
-            Math.max((progress - 0.85) / 0.15, 0),
-            1,
-          );
-          if (revealOpacity !== last.navOpacity) {
+          const w = window.innerWidth;
+          const margin = (w <= 768 ? 120 : 560) * (p - 0.85);
+          setWrapperMargin?.(`0 ${margin}px`);
+          const revealOpacity = Math.min((p - 0.85) / 0.15, 1);
+          if (revealOpacity !== lastOpacity) {
             setNavOpacity?.(revealOpacity);
-            last.navOpacity = revealOpacity;
+            lastOpacity = revealOpacity;
           }
-          if (last.wrapperZone !== 1)
+          if (lastWrapperZone !== 1) {
             gsap.set(navEls, {
               zIndex: 1,
               color: "var(--foreground)",
               borderColor: "var(--foreground)",
             });
-        } else if (last.wrapperZone !== 0) {
-          if (heroWrapper)
-            gsap.set(heroWrapper, { margin: "0 0px", borderRadius: 0 });
+            if (heroWrapper)
+              heroWrapper.style.borderRadius = w <= 768 ? "16px" : "24px";
+          }
+        } else if (lastWrapperZone !== 0) {
+          setWrapperMargin?.("0 0px");
+          if (heroWrapper) heroWrapper.style.borderRadius = "0";
         }
-        last.wrapperZone = wrapperZone;
+        lastWrapperZone = wrapperZone;
       },
     });
-  }, [scheduleRender]);
+  }, [render]);
 
-  // ── Mount / init ─────────────────────────────────────────────────────────
+  // Init
   useEffect(() => {
     mountedRef.current = true;
-    initializedRef.current = false;
-    return () => {
-      mountedRef.current = false;
-      // Reset ready state so template waits for canvas on next visit
-      setIsReady(false);
-      setLoadedImageCount(0);
-    };
-  }, [setIsReady, setLoadedImageCount]);
-
-  useEffect(() => {
-    isMobileRef.current = getIsMobile();
+    isMobileRef.current = window.innerWidth < 768;
     const mobile = isMobileRef.current;
 
+    // Setup canvas (desktop only)
     if (!mobile) {
       const canvas = canvasRef.current;
       if (!canvas) return;
-      const context = canvas.getContext("2d", { alpha: false });
-      if (!context) return;
-      contextRef.current = context;
-      updateCanvasSize();
-    } else {
-      canvasDimsRef.current = { w: window.innerWidth, h: window.innerHeight };
-    }
+      const ctx = canvas.getContext("2d", { alpha: false });
+      if (!ctx) return;
+      ctxRef.current = ctx;
 
-    if (initializedRef.current) return;
-    initializedRef.current = true;
-
-    // Init bitmaps array once
-    if (bitmapsRef.current.length === 0) {
-      bitmapsRef.current = new Array(TOTAL_FRAMES).fill(null);
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+      canvas.style.width = `${w}px`;
+      canvas.style.height = `${h}px`;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
 
     const finishSetup = (imgs: HTMLImageElement[]) => {
       if (!mountedRef.current) return;
       imagesRef.current = imgs;
-      videoFrameRef.current.frame = 0;
+      frameRef.current = 0;
       render();
       requestAnimationFrame(() => {
         if (!mountedRef.current) return;
-        setupScrollTrigger();
+        setupST();
         requestAnimationFrame(() => {
           if (!mountedRef.current) return;
           setIsReady(true);
@@ -328,89 +221,94 @@ export default function HeroSection() {
       });
     };
 
+    // Load images
     if (images.length > 0) {
       finishSetup(images);
-      // Decode bitmaps for cached images (desktop only)
-      if (!mobile) {
-        images.forEach((img, i) => {
-          if (img.complete && img.naturalWidth > 0) decodeBitmap(i, img);
-        });
-      }
     } else {
       const newImages: HTMLImageElement[] = new Array(TOTAL_FRAMES);
-      let imagesLoaded = 0;
+      let loaded = 0;
 
-      const onLoad = (img: HTMLImageElement, i: number) => {
-        imagesLoaded++;
-        if (imagesLoaded % 16 === 0 || imagesLoaded === TOTAL_FRAMES) {
-          if (mountedRef.current) setLoadedImageCount(imagesLoaded);
+      const onLoad = (i: number) => {
+        loaded++;
+        if (loaded % 20 === 0 || loaded === TOTAL_FRAMES) {
+          if (mountedRef.current) setLoadedImageCount(loaded);
         }
-        // Decode to ImageBitmap immediately after img loads — no double fetch
-        if (!mobile) decodeBitmap(i, img);
-
-        if (imagesLoaded === TOTAL_FRAMES) {
+        if (loaded === TOTAL_FRAMES) {
           if (mountedRef.current) {
             setImages(newImages);
             finishSetup(newImages);
           }
           return;
         }
-        if (imagesLoaded % BATCH_SIZE === 0) loadBatch(imagesLoaded);
+        if (loaded % BATCH_SIZE === 0) loadBatch(loaded);
       };
 
-      const loadBatch = (startIdx: number) => {
-        if (startIdx >= TOTAL_FRAMES) return;
-        const end = Math.min(startIdx + BATCH_SIZE, TOTAL_FRAMES);
-        for (let i = startIdx; i < end; i++) {
+      const loadBatch = (start: number) => {
+        const end = Math.min(start + BATCH_SIZE, TOTAL_FRAMES);
+        for (let i = start; i < end; i++) {
           const img = new Image();
           img.decoding = "async";
           newImages[i] = img;
-          img.onload = () => onLoad(img, i);
-          img.onerror = () => onLoad(img, i);
-          img.src = currentFrame(i);
+          img.onload = () => onLoad(i);
+          img.onerror = () => onLoad(i);
+          img.src = FRAME_URLS[i];
         }
       };
 
-      // Start more batches upfront for faster initial load
-      loadBatch(0);
-      loadBatch(BATCH_SIZE);
-      loadBatch(BATCH_SIZE * 2);
-      loadBatch(BATCH_SIZE * 3);
-      if (!mobile) {
-        loadBatch(BATCH_SIZE * 4);
-        loadBatch(BATCH_SIZE * 5);
-      }
+      // Start parallel batches
+      for (let i = 0; i < (mobile ? 4 : 6); i++) loadBatch(i * BATCH_SIZE);
     }
 
-    window.addEventListener("resize", handleResize);
-    return () => {
-      scrollTriggerRef.current?.kill();
-      window.removeEventListener("resize", handleResize);
-      if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
-      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
-      bitmapsRef.current.forEach((bmp) => bmp?.close());
-      bitmapsRef.current = new Array(TOTAL_FRAMES).fill(null);
-      decodingRef.current.clear();
+    // Resize handler
+    const handleResize = () => {
+      if (!mobile) {
+        const canvas = canvasRef.current;
+        const ctx = ctxRef.current;
+        if (!canvas || !ctx) return;
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        canvas.width = w * dpr;
+        canvas.height = h * dpr;
+        canvas.style.width = `${w}px`;
+        canvas.style.height = `${h}px`;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
+      render();
+      stRef.current?.refresh();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+
+    let resizeTimer: ReturnType<typeof setTimeout>;
+    const debouncedResize = () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(handleResize, 150);
+    };
+
+    window.addEventListener("resize", debouncedResize);
+
+    return () => {
+      mountedRef.current = false;
+      stRef.current?.kill();
+      window.removeEventListener("resize", debouncedResize);
+      clearTimeout(resizeTimer);
+      setIsReady(false);
+      setLoadedImageCount(0);
+    };
+  }, [images, render, setupST, setImages, setIsReady, setLoadedImageCount]);
 
   return (
     <section className="hero">
-      <div className="hero__wrapper box-border flex items-center justify-center rounded-2xl">
-        {/* Desktop: canvas with bitmap pre-decode */}
+      <div className="hero__wrapper box-border flex items-center justify-center">
         <canvas ref={canvasRef} className="max-md:hidden" />
-        {/* Mobile: plain <img> swap — browser handles decode/cache, no GPU overhead */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           ref={imgRef}
           alt=""
           className="md:hidden w-full object-cover"
           style={{ height: "100lvh" }}
-          src={currentFrame(0)}
+          src={FRAME_URLS[0]}
         />
       </div>
-      <div className="hero__content absolute top-2/5 left-1/2 -translate-x-1/2 transform py-2 perspective-distant transform-3d">
+      <div className="hero__content absolute top-2/5 left-1/2 -translate-x-1/2 py-2 perspective-distant transform-3d">
         <div className="hero__header text-background absolute top-1/2 left-1/2 flex w-screen origin-center -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-4 text-center will-change-[transform,opacity]">
           <h1 className="font-sans text-2xl font-bold tracking-normal xl:text-4xl cursor-default">
             Your results reflect{" "}

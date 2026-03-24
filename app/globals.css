@@ -133,6 +133,10 @@
   min-height: 100lvh;
 }
 
+.hero__header {
+  transform: translate(-50%, -50%) translateZ(var(--hero-z, 0px));
+}
+
 @media (hover: hover) {
   .journey__row {
     transition: background-color 0.3s;

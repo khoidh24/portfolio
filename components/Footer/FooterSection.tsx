@@ -3,6 +3,7 @@
 import { useRef, useEffect } from "react";
 
 import VolunoteWordmark from "./VolunoteWordmark";
+import TransitionLink from "@/components/TransitionLink";
 import { usePageReady } from "@/hooks/usePageReady";
 import gsap from "gsap";
 
@@ -46,7 +47,6 @@ export default function FooterSection() {
     const container = containerRef.current;
     if (!container) return;
 
-    // Set hidden state immediately
     gsap.set(".footer__wordmark", { yPercent: -100 });
     gsap.set(".footer__meta", { opacity: 0, y: 12 });
 
@@ -98,50 +98,59 @@ export default function FooterSection() {
       </div>
 
       {/* Meta content */}
-      <div className="border-background/10 mx-auto max-w-7xl px-4 pb-8 pt-6 md:pt-12 md:px-10">
-        <div className="grid grid-cols-1 gap-8 md:grid-cols-[1fr_auto]">
+      <div className="mx-auto max-w-7xl px-8 pb-16 pt-14 md:px-10 md:pt-16">
+        <div className="grid grid-cols-1 gap-16 md:grid-cols-[1fr_auto]">
           {/* Left — tagline */}
-          <p className="footer__meta text-background/40 text-xs leading-relaxed tracking-wide">
+          <p className="footer__meta text-background/40 text-xs leading-loose tracking-wide">
             Crafting interfaces where arts & logic meet.
             <br />
             Ho Chi Minh City, Vietnam.
           </p>
 
           {/* Right — nav groups */}
-          <nav className="footer__meta flex flex-wrap gap-x-10 gap-y-6">
+          <nav className="footer__meta flex flex-wrap gap-x-14 gap-y-12 md:gap-y-6">
             {NAV_GROUPS.map((group) => (
-              <div key={group.heading} className="flex flex-col gap-1.5">
+              <div key={group.heading} className="flex flex-col gap-4">
                 <span className="text-background/25 mb-1 text-[10px] font-semibold tracking-[0.2em] uppercase">
                   {group.heading}
                 </span>
-                {group.links.map((link) => (
-                  <a
-                    key={link.label}
-                    href={link.href}
-                    target={
-                      link.href.startsWith("http") ||
-                      link.href.startsWith("mailto")
-                        ? "_blank"
-                        : undefined
-                    }
-                    rel={
-                      link.href.startsWith("http")
-                        ? "noopener noreferrer"
-                        : undefined
-                    }
-                    className="group text-background/50 hover:text-background relative w-fit text-xs font-medium transition-colors duration-200"
-                  >
-                    {link.label}
-                    <span className="bg-background absolute -bottom-px left-0 h-px w-0 transition-all duration-300 group-hover:w-full" />
-                  </a>
-                ))}
+                {group.links.map((link) => {
+                  const isInternal =
+                    !link.href.startsWith("http") &&
+                    !link.href.startsWith("mailto");
+                  return isInternal ? (
+                    <TransitionLink
+                      key={link.label}
+                      href={link.href}
+                      className="group text-background/50 hover:text-background relative w-fit text-xs font-medium transition-colors duration-200"
+                    >
+                      {link.label}
+                      <span className="bg-background absolute -bottom-px left-0 h-px w-0 transition-all duration-300 group-hover:w-full" />
+                    </TransitionLink>
+                  ) : (
+                    <a
+                      key={link.label}
+                      href={link.href}
+                      target="_blank"
+                      rel={
+                        link.href.startsWith("http")
+                          ? "noopener noreferrer"
+                          : undefined
+                      }
+                      className="group text-background/50 hover:text-background relative w-fit text-xs font-medium transition-colors duration-200"
+                    >
+                      {link.label}
+                      <span className="bg-background absolute -bottom-px left-0 h-px w-0 transition-all duration-300 group-hover:w-full" />
+                    </a>
+                  );
+                })}
               </div>
             ))}
           </nav>
         </div>
 
         {/* Bottom bar */}
-        <div className="footer__meta border-background/10 mt-8 flex items-center justify-between border-t pt-5">
+        <div className="footer__meta border-background/10 mt-16 flex items-center justify-between border-t pt-8 md:mt-10 md:pt-6">
           <span
             className="text-background/25 text-[10px] tracking-wide"
             suppressHydrationWarning

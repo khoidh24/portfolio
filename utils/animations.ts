@@ -2,153 +2,115 @@ import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { AppRouterInstance } from "next/dist/shared/lib/app-router-context.shared-runtime";
 
-//*: Animation when entering page (first load — with loading %)
-export const pageInLoadingAnimation = (onComplete?: () => void) => {
-  const banners = [
+const getBanners = () =>
+  [
     document.getElementById("banner-1"),
     document.getElementById("banner-2"),
     document.getElementById("banner-3"),
     document.getElementById("banner-4"),
   ].filter(Boolean);
 
+// Page-in with loading screen (first load only)
+export const pageInLoadingAnimation = (onComplete?: () => void) => {
+  const banners = getBanners();
   const loading = document.getElementById("loading");
+  if (banners.length !== 4 || !loading) return;
 
-  if (banners.length === 4 && loading) {
-    gsap.killTweensOf(banners);
-    gsap.killTweensOf(loading);
+  gsap.killTweensOf([...banners, loading]);
 
-    const tl = gsap.timeline();
-
-    tl.set(banners, { yPercent: 0 });
-
-    tl.to(loading, {
+  const tl = gsap.timeline();
+  tl.set(banners, { yPercent: 0 })
+    .to(loading, {
       opacity: 0,
       duration: 0.3,
       onComplete: () => {
         loading.style.display = "none";
       },
-    }).to(
+    })
+    .to(
       banners,
       {
         yPercent: 100,
         stagger: 0.04,
         duration: 0.5,
         ease: "power3.inOut",
-        onComplete: () => {
-          onComplete?.();
+        onComplete,
+      },
+      "+=0.1",
+    );
+};
+
+// Page-in without loading screen (subsequent navigations)
+export const pageInWithoutLoadingAnimation = (onComplete?: () => void) => {
+  const banners = getBanners();
+  const loading = document.getElementById("loading");
+  if (banners.length !== 4) return;
+
+  if (loading) {
+    loading.style.display = "none";
+    loading.style.opacity = "0";
+  }
+
+  gsap.killTweensOf(banners);
+  gsap.timeline().set(banners, { yPercent: 0 }).to(banners, {
+    yPercent: 100,
+    stagger: 0.04,
+    duration: 0.5,
+    ease: "power3.inOut",
+    onComplete,
+  });
+};
+
+// Page-out overlay animation
+const runPageOutOverlay = (onComplete?: () => void, skipLoading?: boolean) => {
+  const banners = getBanners();
+  const loading = document.getElementById("loading");
+  if (banners.length !== 4 || !loading) return;
+
+  gsap.killTweensOf([...banners, loading]);
+
+  const tl = gsap.timeline();
+  tl.set(banners, { yPercent: -100 }).to(banners, {
+    yPercent: 0,
+    stagger: 0.04,
+    duration: 0.45,
+    ease: "power3.inOut",
+  });
+
+  if (skipLoading) {
+    loading.style.display = "none";
+    loading.style.opacity = "0";
+    tl.call(() => onComplete?.(), [], "+=0.05");
+  } else {
+    tl.to(
+      loading,
+      {
+        opacity: 1,
+        duration: 0.2,
+        onStart: () => {
+          loading.style.display = "flex";
+          window.dispatchEvent(new CustomEvent("resetLoadingProgress"));
         },
+        onComplete,
       },
       "+=0.1",
     );
   }
 };
 
-//*: Animation page in without loading % (subsequent navigations)
-export const pageInWithoutLoadingAnimation = (onComplete?: () => void) => {
-  const banners = [
-    document.getElementById("banner-1"),
-    document.getElementById("banner-2"),
-    document.getElementById("banner-3"),
-    document.getElementById("banner-4"),
-  ].filter(Boolean);
-
-  const loading = document.getElementById("loading");
-
-  if (banners.length === 4) {
-    if (loading) {
-      loading.style.display = "none";
-      loading.style.opacity = "0";
-    }
-
-    gsap.killTweensOf(banners);
-
-    const tl = gsap.timeline();
-    tl.set(banners, { yPercent: 0 });
-    tl.to(banners, {
-      yPercent: 100,
-      stagger: 0.04,
-      duration: 0.5,
-      ease: "power3.inOut",
-      onComplete: () => {
-        onComplete?.();
-      },
-    });
-  }
-};
-
-//*: Animation when leaving page
-export const runPageOutLoadingOverlayAnimation = (
-  onComplete?: () => void,
-  skipLoadingPercent?: boolean,
-) => {
-  const banners = [
-    document.getElementById("banner-1"),
-    document.getElementById("banner-2"),
-    document.getElementById("banner-3"),
-    document.getElementById("banner-4"),
-  ].filter(Boolean);
-
-  const loading = document.getElementById("loading");
-
-  if (banners.length === 4 && loading) {
-    gsap.killTweensOf(banners);
-    gsap.killTweensOf(loading);
-
-    const tl = gsap.timeline();
-
-    tl.set(banners, { yPercent: -100 });
-
-    tl.to(banners, {
-      yPercent: 0,
-      stagger: 0.04,
-      duration: 0.45,
-      ease: "power3.inOut",
-      overwrite: true,
-    });
-
-    if (skipLoadingPercent) {
-      // Subsequent nav: no loading %, navigate right after banners cover screen
-      // Hide loading overlay immediately so it doesn't flash on the new page
-      if (loading) {
-        loading.style.display = "none";
-        loading.style.opacity = "0";
-      }
-      tl.call(() => onComplete?.(), [], "+=0.05");
-    } else {
-      // First load: show loading % overlay, then navigate
-      tl.to(
-        loading,
-        {
-          opacity: 1,
-          duration: 0.2,
-          onStart: () => {
-            loading.style.display = "flex";
-            window.dispatchEvent(new CustomEvent("resetLoadingProgress"));
-          },
-          onComplete: () => {
-            onComplete?.();
-          },
-        },
-        "+=0.1",
-      );
-    }
-  }
-};
-
+// Page-out with navigation
 export const pageOutLoadingAnimation = (
   href: string,
   router: AppRouterInstance,
   onComplete?: () => void,
-  skipLoadingPercent?: boolean,
+  skipLoading?: boolean,
 ) => {
-  runPageOutLoadingOverlayAnimation(() => {
-    // Kill only ScrollTrigger instances, NOT gsap.globalTimeline
-    // (clearing globalTimeline kills the Lenis ticker and breaks smooth scroll)
+  runPageOutOverlay(() => {
     ScrollTrigger.getAll().forEach((st) => st.kill(true));
     router.push(href);
     onComplete?.();
-    if (skipLoadingPercent) {
+    if (skipLoading) {
       window.dispatchEvent(new CustomEvent("pageOutComplete"));
     }
-  }, skipLoadingPercent);
+  }, skipLoading);
 };

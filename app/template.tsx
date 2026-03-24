@@ -8,7 +8,6 @@ import {
   useRef,
   useState,
 } from "react";
-
 import { TOTAL_FRAMES } from "@/constants";
 import { useLoadImageStore } from "@/stores/useLoadImageStore";
 import { useLoadingProgressStore } from "@/stores/useLoadingProgress";
@@ -16,7 +15,6 @@ import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import Lenis from "lenis";
 import { usePathname, useRouter } from "next/navigation";
-
 import FooterSection from "@/components/Footer/FooterSection";
 import Navigation from "@/components/Navigation";
 import {
@@ -32,7 +30,6 @@ export const dispatchPageReady = () =>
 
 type Props = { children: ReactNode };
 
-// Slot digit — memoized, only re-renders when digit changes
 const SlotDigit = memo(function SlotDigit({ digit }: { digit: number }) {
   const size = "clamp(80px, 18vw, 180px)";
   return (
@@ -78,7 +75,6 @@ export default function Template({ children }: Props) {
   const router = useRouter();
   const pathname = usePathname();
 
-  // Split selectors to avoid re-renders from unrelated store changes
   const isReady = useLoadImageStore((s) => s.isReady);
   const loadedImageCount = useLoadImageStore((s) => s.loadedImageCount);
   const percentNumber = useLoadingProgressStore((s) => s.percentNumber);
@@ -96,41 +92,12 @@ export default function Template({ children }: Props) {
 
   const animationTriggeredRef = useRef(false);
   const pageOutInProgressRef = useRef(false);
-  const pathnameRef = useRef(pathname);
-  const hasInitialLoadCompletedRef = useRef(hasInitialLoadCompleted);
-  const isDocumentReadyRef = useRef(false);
   const lenisRef = useRef<Lenis | null>(null);
-
   const [animatedPercent, setAnimatedPercent] = useState(0);
 
-  // Sync refs
-  useEffect(() => {
-    hasInitialLoadCompletedRef.current = hasInitialLoadCompleted;
-  }, [hasInitialLoadCompleted]);
-  useEffect(() => {
-    pathnameRef.current = pathname;
-  }, [pathname]);
-
-  // Smooth percent counter — only during initial load
-  useEffect(() => {
-    if (hasInitialLoadCompleted) return;
-    const obj = { value: animatedPercent };
-    const tween = gsap.to(obj, {
-      value: percentNumber,
-      duration: 0.5,
-      ease: "power2.out",
-      onUpdate: () => setAnimatedPercent(Math.round(obj.value)),
-    });
-    return () => {
-      tween.kill();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [percentNumber, hasInitialLoadCompleted]);
-
-  // Lenis — desktop only, mobile uses native scroll
+  // Lenis — desktop only
   useLayoutEffect(() => {
     const isMobile = window.innerWidth < 768;
-
     if (isMobile) return;
 
     const lenis = new Lenis({
@@ -140,18 +107,38 @@ export default function Template({ children }: Props) {
       wheelMultiplier: 1.2,
     });
     lenisRef.current = lenis;
-    (window as { __lenis?: Lenis }).__lenis = lenis;
+    (window as any).__lenis = lenis;
     lenis.on("scroll", ScrollTrigger.update);
     const tick = (time: number) => lenis.raf(time * 1000);
     gsap.ticker.add(tick);
     gsap.ticker.lagSmoothing(500, 33);
+
     return () => {
       gsap.ticker.remove(tick);
       lenis.destroy();
       lenisRef.current = null;
-      delete (window as { __lenis?: Lenis }).__lenis;
+      delete (window as any).__lenis;
     };
   }, []);
+
+  // Smooth percent counter
+  useEffect(() => {
+    if (hasInitialLoadCompleted) return;
+    const tween = gsap.to(
+      { value: animatedPercent },
+      {
+        value: percentNumber,
+        duration: 0.5,
+        ease: "power2.out",
+        onUpdate: function () {
+          setAnimatedPercent(Math.round(this.targets()[0].value));
+        },
+      },
+    );
+    return () => {
+      tween.kill();
+    };
+  }, [percentNumber, hasInitialLoadCompleted, animatedPercent]);
 
   // Non-home nav styles
   useEffect(() => {
@@ -169,20 +156,19 @@ export default function Template({ children }: Props) {
 
   // Back/forward interception
   useEffect(() => {
-    const isAnimatingRef = { current: false };
+    let isAnimating = false;
     const handle = (e: PopStateEvent) => {
-      const current = pathnameRef.current;
       const target = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-      if (target === current || isAnimatingRef.current) return;
+      if (target === pathname || isAnimating) return;
       e.stopImmediatePropagation();
-      window.history.pushState(window.history.state, "", current);
-      isAnimatingRef.current = true;
+      window.history.pushState(window.history.state, "", pathname);
+      isAnimating = true;
       pageOutInProgressRef.current = true;
       pageOutLoadingAnimation(
         target,
         router,
         () => {
-          isAnimatingRef.current = false;
+          isAnimating = false;
           pageOutInProgressRef.current = false;
         },
         true,
@@ -191,51 +177,16 @@ export default function Template({ children }: Props) {
     window.addEventListener("popstate", handle, { capture: true });
     return () =>
       window.removeEventListener("popstate", handle, { capture: true });
-  }, [router]);
+  }, [router, pathname]);
 
   // Reset on route change
   useEffect(() => {
     animationTriggeredRef.current = false;
-    if (!hasInitialLoadCompletedRef.current) {
-      isDocumentReadyRef.current = false;
+    if (!hasInitialLoadCompleted) {
       setPercentNumber(0);
       setIsLoadingComplete(false);
-      setAnimatedPercent(0);
-    } else {
       setAnimatedPercent(0);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pathname]);
-
-  // Reset progress event
-  useEffect(() => {
-    const handle = () => {
-      if (hasInitialLoadCompletedRef.current) return;
-      setPercentNumber(0);
-      setIsLoadingComplete(false);
-      setAnimatedPercent(0);
-    };
-    window.addEventListener("resetLoadingProgress", handle);
-    return () => window.removeEventListener("resetLoadingProgress", handle);
-  }, [setPercentNumber, setIsLoadingComplete]);
-
-  // Track document ready (non-home, first load only)
-  useEffect(() => {
-    if (pathname === "/" || hasInitialLoadCompleted) return;
-    const check = () => {
-      if (document.readyState === "complete") {
-        isDocumentReadyRef.current = true;
-        setPercentNumber(100);
-        setIsLoadingComplete(true);
-      }
-    };
-    check();
-    window.addEventListener("load", check);
-    document.addEventListener("readystatechange", check);
-    return () => {
-      window.removeEventListener("load", check);
-      document.removeEventListener("readystatechange", check);
-    };
   }, [
     pathname,
     hasInitialLoadCompleted,
@@ -246,19 +197,30 @@ export default function Template({ children }: Props) {
   // Loading progress
   useEffect(() => {
     if (hasInitialLoadCompleted) return;
+
     if (pathname === "/") {
       setPercentNumber(Math.round((loadedImageCount / TOTAL_FRAMES) * 100));
       if (loadedImageCount === TOTAL_FRAMES) setIsLoadingComplete(true);
     } else {
-      if (isDocumentReadyRef.current) {
-        setPercentNumber(100);
-        setIsLoadingComplete(true);
-      } else {
-        const id = setInterval(() => {
-          setPercentNumber((p) => (p >= 90 ? p : Math.min(p + 10, 90)));
-        }, 100);
-        return () => clearInterval(id);
-      }
+      const checkReady = () => {
+        if (document.readyState === "complete") {
+          setPercentNumber(100);
+          setIsLoadingComplete(true);
+        }
+      };
+      checkReady();
+      window.addEventListener("load", checkReady);
+      document.addEventListener("readystatechange", checkReady);
+
+      const interval = setInterval(() => {
+        setPercentNumber((p) => (p >= 90 ? p : Math.min(p + 10, 90)));
+      }, 100);
+
+      return () => {
+        clearInterval(interval);
+        window.removeEventListener("load", checkReady);
+        document.removeEventListener("readystatechange", checkReady);
+      };
     }
   }, [
     pathname,
@@ -268,54 +230,56 @@ export default function Template({ children }: Props) {
     setIsLoadingComplete,
   ]);
 
-  // Page-in: non-home
+  // Page-in animations (subsequent navigations only, not first load)
   useEffect(() => {
     if (!hasInitialLoadCompleted || animationTriggeredRef.current) return;
-    if (pathname === "/") return;
-    if (pageOutInProgressRef.current) {
-      const id = setInterval(() => {
-        if (!pageOutInProgressRef.current) {
-          clearInterval(id);
-          animationTriggeredRef.current = true;
-          lenisRef.current?.scrollTo(0, { immediate: true }) ??
-            window.scrollTo(0, 0);
-          pageInWithoutLoadingAnimation(() => {
-            ScrollTrigger.refresh();
-            dispatchPageReady();
-          });
-        }
-      }, 16);
-      return () => clearInterval(id);
+
+    const scrollToTop = () => {
+      lenisRef.current?.scrollTo(0, { immediate: true }) ??
+        window.scrollTo(0, 0);
+    };
+
+    // Non-home page-in
+    if (pathname !== "/") {
+      if (pageOutInProgressRef.current) {
+        const interval = setInterval(() => {
+          if (!pageOutInProgressRef.current) {
+            clearInterval(interval);
+            animationTriggeredRef.current = true;
+            scrollToTop();
+            pageInWithoutLoadingAnimation(() => {
+              ScrollTrigger.refresh();
+              dispatchPageReady();
+            });
+          }
+        }, 16);
+        return () => clearInterval(interval);
+      }
+      animationTriggeredRef.current = true;
+      scrollToTop();
+      requestAnimationFrame(() => {
+        pageInWithoutLoadingAnimation(() => {
+          ScrollTrigger.refresh();
+          dispatchPageReady();
+        });
+      });
+      return;
     }
-    animationTriggeredRef.current = true;
-    lenisRef.current?.scrollTo(0, { immediate: true }) ?? window.scrollTo(0, 0);
-    const raf = requestAnimationFrame(() => {
-      pageInWithoutLoadingAnimation(() => {
-        ScrollTrigger.refresh();
-        dispatchPageReady();
-      });
-    });
-    return () => cancelAnimationFrame(raf);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pathname]);
 
-  // Page-in: homepage (waits for canvas)
-  useEffect(() => {
-    if (!hasInitialLoadCompleted || animationTriggeredRef.current) return;
-    if (pathname !== "/" || !isReady || pageOutInProgressRef.current) return;
-    animationTriggeredRef.current = true;
-    lenisRef.current?.scrollTo(0, { immediate: true }) ?? window.scrollTo(0, 0);
-    const raf = requestAnimationFrame(() => {
-      pageInWithoutLoadingAnimation(() => {
-        ScrollTrigger.refresh();
-        dispatchPageReady();
+    // Homepage page-in (wait for canvas ready)
+    if (isReady && !pageOutInProgressRef.current) {
+      animationTriggeredRef.current = true;
+      scrollToTop();
+      requestAnimationFrame(() => {
+        pageInWithoutLoadingAnimation(() => {
+          ScrollTrigger.refresh();
+          dispatchPageReady();
+        });
       });
-    });
-    return () => cancelAnimationFrame(raf);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isReady]);
+    }
+  }, [pathname, isReady]);
 
-  // First load
+  // First load animation
   useEffect(() => {
     if (
       hasInitialLoadCompleted ||
@@ -324,7 +288,8 @@ export default function Template({ children }: Props) {
     )
       return;
     if (pathname === "/" && !isReady) return;
-    const id = setTimeout(() => {
+
+    const timeout = setTimeout(() => {
       window.history.scrollRestoration = "manual";
       lenisRef.current?.scrollTo(0, { immediate: true }) ??
         window.scrollTo(0, 0);
@@ -335,7 +300,8 @@ export default function Template({ children }: Props) {
       });
       animationTriggeredRef.current = true;
     }, 800);
-    return () => clearTimeout(id);
+
+    return () => clearTimeout(timeout);
   }, [
     pathname,
     isReady,
@@ -344,6 +310,7 @@ export default function Template({ children }: Props) {
     setHasInitialLoadCompleted,
   ]);
 
+  // Console easter egg
   useEffect(() => {
     console.log(
       "%c⚠️ I see you ⚠️",
