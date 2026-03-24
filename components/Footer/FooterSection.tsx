@@ -158,9 +158,6 @@ export default function FooterSection() {
           >
             © {new Date().getFullYear()} Volunote. All rights reserved.
           </span>
-          <span className="text-background/25 text-[10px] tracking-wide">
-            Built with Next.js & Lenis
-          </span>
         </div>
       </div>
     </div>
