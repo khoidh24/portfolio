@@ -77,6 +77,11 @@ export default function HeroSection() {
     const setScrollIndicatorOpacity = scrollIndicator
       ? gsap.quickSetter(scrollIndicator, "opacity")
       : null;
+    const setScrollIndicatorScale = scrollIndicator
+      ? (v: number) => {
+          if (scrollIndicator) gsap.set(scrollIndicator, { scale: v });
+        }
+      : null;
     const setHeaderZ = heroHeader
       ? (v: number) => heroHeader.style.setProperty("--hero-z", `${v}px`)
       : null;
@@ -151,13 +156,18 @@ export default function HeroSection() {
         // Header + scroll indicator
         const headerVisible = p <= 0.25 ? 1 : 0;
         if (headerVisible) {
-          setHeaderZ?.((p / 0.25) * -500);
+          const zProgress = p / 0.25;
+          setHeaderZ?.(zProgress * -500);
           const opacity = p >= 0.2 ? 1 - (p - 0.2) / 0.05 : 1;
+          // Scale down to match header's perspective zoom (translateZ -500px)
+          const scale = 1 - zProgress * 0.5; // Scale from 1 to 0.5
           setHeaderOpacity?.(opacity);
           setScrollIndicatorOpacity?.(opacity);
+          setScrollIndicatorScale?.(scale);
         } else if (lastHeaderVisible !== 0) {
           setHeaderOpacity?.(0);
           setScrollIndicatorOpacity?.(0);
+          setScrollIndicatorScale?.(0.5);
         }
         lastHeaderVisible = headerVisible;
 
@@ -332,9 +342,11 @@ export default function HeroSection() {
         </div>
       </div>
       {/* Scroll indicator mouse */}
-      <div className="hero__scroll-indicator text-background absolute bottom-32 left-1/2 -translate-x-1/2 will-change-[transform,opacity]">
-        <div className="relative flex h-12 w-7 items-start justify-center rounded-full border-2 border-current p-1.5">
-          <div className="scroll-wheel h-2 w-1.5 rounded-full bg-current" />
+      <div className="absolute bottom-32 left-1/2 -translate-x-1/2">
+        <div className="hero__scroll-indicator text-background origin-center">
+          <div className="relative flex h-12 w-7 items-start justify-center rounded-full border-2 border-current p-1.5">
+            <div className="scroll-wheel h-2 w-1.5 rounded-full bg-current" />
+          </div>
         </div>
       </div>
     </section>
